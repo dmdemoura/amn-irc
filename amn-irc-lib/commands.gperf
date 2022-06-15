@@ -1,0 +1,69 @@
+%{
+
+#include "irc_cmd_map.h"
+
+struct IrcCmdTypeMapping
+{
+	const char* name;
+	IrcCmdType cmd;
+};
+
+const struct IrcCmdTypeMapping* in_word_set(const char* cmd, size_t len);
+
+IrcCmdType IrcCmdType_FromStr(const char* cmd, size_t len)
+{
+	const struct IrcCmdTypeMapping* mapping =  in_word_set(cmd, len);
+
+	return mapping != NULL ? mapping->cmd : IrcCmdType_Null;
+}
+
+
+%}
+%language=ANSI-C
+%compare-strncmp
+%readonly-tables
+%enum
+%includes
+%struct-type
+struct IrcCmdTypeMapping;
+%%
+PASS, IrcCmdType_Pass
+NICK, IrcCmdType_Nick
+USER, IrcCmdType_User
+SERVER, IrcCmdType_Server
+OPERATOR, IrcCmdType_Operator
+QUIT, IrcCmdType_Quit
+SQUIT, IrcCmdType_ServerQuit
+JOIN, IrcCmdType_Join
+PART, IrcCmdType_Part
+MODE, IrcCmdType_Mode
+TOPIC, IrcCmdType_Topic
+NAMES, IrcCmdType_Names
+LIST, IrcCmdType_List
+INVITE, IrcCmdType_Invite
+KICK, IrcCmdType_Kick
+VERSION, IrcCmdType_Version
+STATS, IrcCmdType_Stats
+LINKS, IrcCmdType_Links
+TIME, IrcCmdType_Time
+CONNECT, IrcCmdType_Connect
+TRACE, IrcCmdType_Trace
+ADMIN, IrcCmdType_Admin
+INFO, IrcCmdType_Info
+PRIVMSG, IrcCmdType_PrivMsg
+NOTICE, IrcCmdType_Notice
+WHO, IrcCmdType_Who
+WHOIS, IrcCmdType_Whois
+WHOWAS, IrcCmdType_Whowas
+KILL, IrcCmdType_Kill
+PING, IrcCmdType_Ping
+PONG, IrcCmdType_Pong
+ERROR, IrcCmdType_Error
+AWAY, IrcCmdType_Away
+REHASH, IrcCmdType_Rehash
+RESTART, IrcCmdType_Restart
+SUMMON, IrcCmdType_Summon
+USERS, IrcCmdType_Users
+WALLOPS, IrcCmdType_WallOps
+USERHOST, IrcCmdType_UserHost
+ISON, IrcCmdType_IsOn
