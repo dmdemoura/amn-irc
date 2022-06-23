@@ -140,16 +140,17 @@ Task* TaskQueue_Pop(TaskQueue* self)
 	{
 		self->front = SIZE_MAX; 
 		self->rear = SIZE_MAX;
+
+		if (pthread_cond_signal(&self->notFull) != 0)
+		{
+			return NULL;
+		}
 	}
 	else
 	{
 		self->front = (self->front + 1) % self->capacity;
 	}
 
-	if (pthread_cond_signal(&self->notFull) != 0)
-	{
-		return NULL;
-	}
 	if (pthread_mutex_unlock(&self->mutex) != 0)
 	{
 		return NULL;

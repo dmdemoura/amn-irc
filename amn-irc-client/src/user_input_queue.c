@@ -1,4 +1,4 @@
-#include "irc_cmd_queue.h"
+#include "user_input_queue.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -7,11 +7,11 @@
 #include <stdlib.h>
 #include <pthread.h>
 
-struct IrcCmdQueue
+struct UserInputQueue
 {
-	IrcCmd** ircCmds;	
-	size_t front; // The index of the next ircMsg to be popped.
-	size_t rear; // The index of the last pushed ircMsged.
+	char** userinputs;	
+	size_t front; // The index of the next userinput to be popped.
+	size_t rear; // The index of the last pushed userinputed.
 	size_t capacity;
 
 	pthread_mutex_t mutex;
@@ -19,9 +19,9 @@ struct IrcCmdQueue
 	pthread_cond_t notFull;
 };
 
-IrcCmdQueue* IrcCmdQueue_New(size_t capacity)
+UserInputQueue* UserInputQueue_New(size_t capacity)
 {
-	IrcCmdQueue* self = malloc(sizeof(IrcCmdQueue));
+	UserInputQueue* self = malloc(sizeof(UserInputQueue));
 	if (self == NULL)
 		return NULL;
 
@@ -29,9 +29,9 @@ IrcCmdQueue* IrcCmdQueue_New(size_t capacity)
 	self->rear = SIZE_MAX;
 	self->capacity = capacity;
 
-	self->ircCmds = malloc(sizeof(IrcCmd*) * self->capacity);
-	if (self->ircCmds == NULL)
-		goto error_ircMsgs;
+	self->userinputs = malloc(sizeof(char*) * self->capacity);
+	if (self->userinputs == NULL)
+		goto error_userinputs;
 
 	if (pthread_mutex_init(&self->mutex, NULL) != 0)
 		goto error_mutex;
@@ -49,45 +49,45 @@ error_notFull:
 error_notEmpty:
 	pthread_mutex_destroy(&self->mutex);
 error_mutex:
-	free(self->ircCmds);
-error_ircMsgs:
+	free(self->userinputs);
+error_userinputs:
 	free(self);
 	return NULL;
 }
 
-void IrcCmdQueue_Delete(IrcCmdQueue* self)
+void UserInputQueue_Delete(UserInputQueue* self)
 {
 	pthread_cond_destroy(&self->notFull);
 	pthread_cond_destroy(&self->notEmpty);
 	pthread_mutex_destroy(&self->mutex);
 
-	free(self->ircCmds);
+	free(self->userinputs);
 	free(self);
 }
 
-bool IrcCmdQueue_IsEmpty(const IrcCmdQueue* self)
+bool UserInputQueue_IsEmpty(const UserInputQueue* self)
 {
 	return self->front == SIZE_MAX;
 }
 
-bool IrcCmdQueue_IsFull(const IrcCmdQueue* self)
+bool UserInputQueue_IsFull(const UserInputQueue* self)
 {
 	return self->capacity == 0 || (self->rear + 1) % self->capacity == self->front;
 }
 
-bool IrcCmdQueue_IsLastIrcCmd(const IrcCmdQueue* self)
+bool UserInputQueue_IsLastUserInput(const UserInputQueue* self)
 {
 	return self->front == self->rear;
 }
 
-bool IrcCmdQueue_Push(IrcCmdQueue* self, IrcCmd* ircCmd)
+bool UserInputQueue_Push(UserInputQueue* self, char* userinput)
 {
 	if (pthread_mutex_lock(&self->mutex) != 0)
 	{
 		return false;
 	}
 	
-	while(IrcCmdQueue_IsFull(self))
+	while(UserInputQueue_IsFull(self))
 	{
 		if (pthread_cond_wait(&self->notFull, &self->mutex) != 0)
 		{
@@ -95,7 +95,7 @@ bool IrcCmdQueue_Push(IrcCmdQueue* self, IrcCmd* ircCmd)
 		}
 	}
 
-	if (IrcCmdQueue_IsEmpty(self))
+	if (UserInputQueue_IsEmpty(self))
 	{
 		self->front = 0;
 		self->rear = 0;
@@ -105,7 +105,7 @@ bool IrcCmdQueue_Push(IrcCmdQueue* self, IrcCmd* ircCmd)
 		self->rear = (self->rear + 1) % self->capacity;
 	}
 
-	self->ircCmds[self->rear] = ircCmd;
+	self->userinputs[self->rear] = userinput;
 
 	if (pthread_cond_signal(&self->notEmpty) != 0)
 	{
@@ -119,14 +119,14 @@ bool IrcCmdQueue_Push(IrcCmdQueue* self, IrcCmd* ircCmd)
 	return true;
 }
 
-IrcCmd* IrcCmdQueue_Pop(IrcCmdQueue* self)
+char* UserInputQueue_Pop(UserInputQueue* self)
 {
 	if (pthread_mutex_lock(&self->mutex) != 0)
 	{
 		return NULL;
 	}
 
-	while (IrcCmdQueue_IsEmpty(self))
+	while (UserInputQueue_IsEmpty(self))
 	{
 		if (pthread_cond_wait(&self->notEmpty, &self->mutex) != 0 )
 		{
@@ -134,9 +134,9 @@ IrcCmd* IrcCmdQueue_Pop(IrcCmdQueue* self)
 		}
 	}
 
-	IrcCmd* ircCmd = self->ircCmds[self->front];
+	char* userinput = self->userinputs[self->front];
 
-	if (IrcCmdQueue_IsLastIrcCmd(self))
+	if (UserInputQueue_IsLastUserInput(self))
 	{
 		self->front = SIZE_MAX; 
 		self->rear = SIZE_MAX;
@@ -156,5 +156,5 @@ IrcCmd* IrcCmdQueue_Pop(IrcCmdQueue* self)
 		return NULL;
 	}
 
-	return ircCmd;
+	return userinput;
 }

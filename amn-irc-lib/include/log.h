@@ -2,6 +2,8 @@
 #define AMN_LOG_H
 
 #include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
 
 typedef struct Logger Logger;
 
@@ -13,9 +15,12 @@ typedef enum LogLevel {
 } LogLevel;
 
 /**
+  * @param logFiles			An array of files to log to, it must live as long
+  *							as the logger does.
+  *	@param logFileCount		How many log files to use.
   * @return A new logger, or null if failure occurs. 
   */
-Logger* Logger_Create();
+Logger* Logger_Create(FILE* *const logFiles, size_t logFileCount);
 
 /**
  * @param self Pointer to a logger, must not be null.

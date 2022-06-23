@@ -1,12 +1,18 @@
 cmake_minimum_required(VERSION 3.18)
-project(amn-irc-server)
+project(amn-irc-client)
+
+find_package(Curses REQUIRED)
 
 add_executable(${PROJECT_NAME}
-	"src/accept_conn_task.h"
-	"src/accept_conn_task.c"
-	"src/receive_msg_task.h"
-	"src/receive_msg_task.c"
 	"src/main.c"
+	"src/tui.h"
+	"src/tui.c"
+	"src/msg_sender_task.h"
+	"src/msg_sender_task.c"
+	"src/user_input_queue.h"
+	"src/user_input_queue.c"
+	"src/user_output_queue.h"
+	"src/user_output_queue.c"
 )
 
 target_compile_features(${PROJECT_NAME} PUBLIC c_std_17)
@@ -15,7 +21,13 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 	C_STANDARD_REQUIRED YES
 	C_EXTENSIONS ON)
 
-target_link_libraries(${PROJECT_NAME} PRIVATE amn-irc-lib) 
+target_include_directories(${PROJECT_NAME}
+	PRIVATE
+		"src/"
+		"${CURSES_INCLUDE_DIR}"
+)
+
+target_link_libraries(${PROJECT_NAME} PRIVATE amn-irc-lib ${CURSES_LIBRARY}) 
 
 target_compile_options(${PROJECT_NAME}
 	PRIVATE

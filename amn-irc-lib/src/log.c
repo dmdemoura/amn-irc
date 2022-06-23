@@ -36,18 +36,39 @@ static const char* LogLevel_ToString(LogLevel level)
 }
 
 struct Logger {
-	int placeholder;	
+	FILE** logFiles;
+	size_t logFileCount;
 };
 
-Logger* Logger_Create()
+Logger* Logger_Create(FILE* *const logFiles, size_t logFileCount)
 {
 	Logger* self = malloc(sizeof(Logger));
+	if (self == NULL)
+	{
+		return NULL;
+	}
+
+	self->logFiles = malloc(sizeof(FILE*) * logFileCount);
+	if (self->logFiles == NULL)
+	{
+		free(self);
+		return NULL;
+	}
+
+	memcpy(self->logFiles, logFiles, sizeof(FILE*) * logFileCount);
+	self->logFileCount = logFileCount;
 	
 	return self;
 }
 
 void Logger_Destroy(Logger* self)
 {
+	if (self == NULL)
+	{
+		return;
+	}
+
+	free(self->logFiles);
 	free(self);
 }
 
@@ -91,16 +112,17 @@ void Logger_Log(
 	char timeString[MAX_TIME_BYTES];
 	timeOk = timeOk && strftime(timeString, MAX_TIME_BYTES, TIME_PATTERN, &localTime) != 0;
 
-	printf(LOG_PATTERN,
-			timeOk ? timeString : "time fmt err",
-			LogLevel_ToString(level),
-			getRelativePathForLog(file),
-			line, function,
-			messageOk ? message : "msg fmt err",
-			hasErrno ? "\tErrno: " : "",
-			hasErrno ? (errnoOk ? errorMsg : "errno fmt err") : "");
+	for (size_t i = 0; i < self->logFileCount; i++)
+	{
+		fprintf(self->logFiles[i], LOG_PATTERN,
+				timeOk ? timeString : "time fmt err",
+				LogLevel_ToString(level),
+				getRelativePathForLog(file),
+				line, function,
+				messageOk ? message : "msg fmt err",
+				hasErrno ? "\tErrno: " : "",
+				hasErrno ? (errnoOk ? errorMsg : "errno fmt err") : "");
+	}
 
 	errno = 0;
 }
-
-

@@ -9,12 +9,20 @@ add_library(${PROJECT_NAME}
 	"include/irc_cmd.h"
 	"include/irc_msg_reader.h"
 	"src/irc_msg_reader.c"
+	"include/irc_msg_writer.h"
+	"src/irc_msg_writer.c"
 	"include/irc_msg_parser.h"
 	"src/irc_msg_parser.c"
 	"include/irc_msg_validator.h"
 	"src/irc_msg_validator.c"
 	"src/irc_cmd_map.h"
 	"src/irc_cmd_map.c"
+	"include/task.h"
+	"src/task.c"
+	"include/task_queue.h"
+	"src/task_queue.c"
+	"include/task_runner.h"
+	"src/task_runner.c"
 )
 
 target_compile_features(${PROJECT_NAME} PUBLIC c_std_17)
