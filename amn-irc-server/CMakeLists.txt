@@ -2,12 +2,6 @@ cmake_minimum_required(VERSION 3.18)
 project(amn-irc-server)
 
 add_executable(${PROJECT_NAME}
-	"src/task.h"
-	"src/task.c"
-	"src/task_queue.h"
-	"src/task_queue.c"
-	"src/task_runner.h"
-	"src/task_runner.c"
 	"src/irc_cmd_queue.h"
 	"src/irc_cmd_queue.c"
 	"src/irc_cmd_executor_task.h"

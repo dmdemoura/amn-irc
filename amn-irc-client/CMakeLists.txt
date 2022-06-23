@@ -1,36 +1,18 @@
 cmake_minimum_required(VERSION 3.18)
-project(amn-irc-lib)
+project(amn-irc-client)
 
-add_library(${PROJECT_NAME}
-	"include/log.h"
-	"src/log.c"
-	"include/irc_msg.h"
-	"src/irc_msg.c"
-	"include/irc_cmd_type.h"
-	"include/irc_cmd.h"
-	"src/irc_cmd.c"
-	"include/irc_msg_reader.h"
-	"src/irc_msg_reader.c"
-	"include/irc_msg_writer.h"
-	"src/irc_msg_writer.c"
-	"include/irc_msg_parser.h"
-	"src/irc_msg_parser.c"
-	"include/irc_cmd_parser.h"
-	"src/irc_cmd_parser.c"
-	"include/irc_msg_validator.h"
-	"src/irc_msg_validator.c"
-	"src/irc_cmd_map.h"
-	"src/irc_cmd_map.c"
-	"include/str_utils.h"
-	"src/str_utils.c"
-	"include/array_list.h"
-	"src/array_list.c"
-	"include/task.h"
-	"src/task.c"
-	"include/task_queue.h"
-	"src/task_queue.c"
-	"include/task_runner.h"
-	"src/task_runner.c"
+find_package(Curses REQUIRED)
+
+add_executable(${PROJECT_NAME}
+	"src/main.c"
+	"src/tui.h"
+	"src/tui.c"
+	"src/msg_sender_task.h"
+	"src/msg_sender_task.c"
+	"src/user_input_queue.h"
+	"src/user_input_queue.c"
+	"src/user_output_queue.h"
+	"src/user_output_queue.c"
 )
 
 target_compile_features(${PROJECT_NAME} PUBLIC c_std_17)
@@ -40,11 +22,12 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 	C_EXTENSIONS ON)
 
 target_include_directories(${PROJECT_NAME}
-	PUBLIC
-		"include/"
 	PRIVATE
 		"src/"
+		"${CURSES_INCLUDE_DIR}"
 )
+
+target_link_libraries(${PROJECT_NAME} PRIVATE amn-irc-lib ${CURSES_LIBRARY}) 
 
 target_compile_options(${PROJECT_NAME}
 	PRIVATE

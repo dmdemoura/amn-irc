@@ -111,8 +111,7 @@ bool StartServer(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds)
 int main()
 {
 	int returnCode = EXIT_FAILURE;
-	Logger* log = Logger_Create();
-	// ServerContext* serverCtx = ServerContext_New(log);
+	Logger* log = Logger_Create(&stdout, 1);
 	TaskQueue* tasks = NULL;
 	TaskRunner* runners[RUNNER_COUNT] = {0};
 	IrcCmdQueue* cmds = NULL;
@@ -167,7 +166,6 @@ cleanup:
 	IrcCmdQueue_Delete(cmds);
 
 	TaskQueue_Delete(tasks);
-	// ServerContext_Delete(serverCtx);
 	Logger_Destroy(log);
 
 	return returnCode;
