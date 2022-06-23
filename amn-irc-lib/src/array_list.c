@@ -119,16 +119,16 @@ size_t ArrayList_Size(ArrayList* self)
 }
 
 bool ArrayList_Remove(
-		ArrayList* self, bool compare(const void*, const void*), const void* compareData)
-{
-	size_t i = ArrayList_FindIndex(self, compare, compareData);
-	if (i == SIZE_MAX)
-	{
-		return false;
-	}
+		ArrayList* self, bool compare(const void*, const void*), const void* compareData);
+// {
+// 	size_t i = ArrayList_FindIndex(self, compare, compareData);
+// 	if (i == SIZE_MAX)
+// 	{
+// 		return false;
+// 	}
 
-	return ArrayList_RemoveIndex(self, i);
-}
+// 	return ArrayList_RemoveIndex(self, i);
+// }
 
 bool ArrayList_RemoveIndex(ArrayList* self, size_t index);
 

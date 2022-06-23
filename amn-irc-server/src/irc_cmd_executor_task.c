@@ -1,6 +1,7 @@
 #include "irc_cmd_executor_task.h"
 
 #include "array_list.h"
+#include "send_msg_task.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -65,9 +66,11 @@ static IrcCmdExecutorContext* IrcCmdExecutorContext_New(
 static void IrcCmdExecutorContext_Delete(void* context);
 
 static void WaitForCmds(void* context);
-static bool ExecuteCmd(IrcCmdExecutorContext* ctx, const IrcCmd* cmd);
+static bool ExecuteCmd(IrcCmdExecutorContext* ctx, IrcCmd* cmd);
 static bool ExecuteCmdNick(
-		IrcCmdExecutorContext* ctx, const int peerSocket, const IrcCmdNick* cmd);
+		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdNick* cmd);
+
+static bool Reply(IrcCmdExecutorContext* ctx, const int peerSocket, const char* rawMsg);
 
 Task* IrcCmdExecutorTask_New(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds)
 {
@@ -147,7 +150,7 @@ static void WaitForCmds(void* arg)
 	}
 }
 
-static bool ExecuteCmd(IrcCmdExecutorContext* ctx, const IrcCmd* cmd)
+static bool ExecuteCmd(IrcCmdExecutorContext* ctx, IrcCmd* cmd)
 {
 	// TODO: Do stuff
 	bool result = true;
@@ -168,7 +171,7 @@ static bool ExecuteCmd(IrcCmdExecutorContext* ctx, const IrcCmd* cmd)
 }
 
 static bool ExecuteCmdNick(
-		IrcCmdExecutorContext* ctx, const int peerSocket, const IrcCmdNick* cmd)
+		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdNick* cmd)
 {
 	User* existingUser = ArrayList_Find(ctx->users, User_CmpSocket, &peerSocket);
 
@@ -183,6 +186,13 @@ static bool ExecuteCmdNick(
 			// Nick name conflict
 			// TODO: Error reply and kill command.
 			LOG_INFO(ctx->log, "Nickname collision: %s.", cmd->nickname);
+
+			if (!Reply(ctx, peerSocket,
+						":servername.todo 436 nick.todo :Nickname collision KILL\r\n"))
+			{
+				return false;
+			}
+
 			return true;
 		}
 
@@ -190,19 +200,39 @@ static bool ExecuteCmdNick(
 			.socket = peerSocket,
 			.nickname = cmd->nickname
 		};
+		// IrcCmd will not be used afterwards so we can steal the memory allocation
+		cmd->nickname = NULL;
 
 		if (!ArrayList_Append(ctx->users, &newUser))
 		{
 			return false;
 		}
 
-		LOG_INFO(ctx->log, "New client registered nickname: %s.", cmd->nickname);
+		LOG_INFO(ctx->log, "New client registered nickname: %s.", newUser.nickname);
 	}
 	else
 	{
 		// Nickname change
 		// TODO: Nickname change.
 		LOG_ERROR(ctx->log, "Nickname change is unimplemented!");
+	}
+
+	return true;
+}
+
+static bool Reply(IrcCmdExecutorContext* ctx, const int peerSocket, const IrcMsg* msg)
+{
+	Task* sendMsgTask = SendMsgTask_New(ctx->log, peerSocket, msg);
+	if (sendMsgTask == NULL)
+	{
+		LOG_ERROR(ctx->log, "Failed to create send msg task!");
+		return false;
+	}
+
+	if (!TaskQueue_Push(ctx->tasks, sendMsgTask))
+	{
+		LOG_ERROR(ctx->log, "Failed to push send message task onto queue");
+		return false;
 	}
 
 	return true;

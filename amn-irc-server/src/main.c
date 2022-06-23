@@ -5,7 +5,7 @@
 #include "task_queue.h"
 #include "task_runner.h"
 #include "accept_conn_task.h"
-#include "server_context.h"
+#include "irc_cmd_executor_task.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -76,7 +76,7 @@ int setupSocket(const Logger* log, struct addrinfo* address)
 	return listenSocket;
 }
 
-bool StartServer(const Logger* log, TaskQueue* tasks)
+bool StartServer(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds)
 {
 	struct addrinfo* address = getServerAddress(log);
 	if(address == NULL)
@@ -87,7 +87,7 @@ bool StartServer(const Logger* log, TaskQueue* tasks)
 	if(listenSocket == -1)
 		return false;
 
-	Task* acceptConnTask = AcceptConnTask_New(log, tasks, listenSocket);
+	Task* acceptConnTask = AcceptConnTask_New(log, tasks, cmds, listenSocket);
 	if (acceptConnTask == NULL)
 	{
 		LOG_ERROR(log, "Failed to create task to accept connections.");
@@ -101,6 +101,7 @@ bool StartServer(const Logger* log, TaskQueue* tasks)
 	if (!TaskQueue_Push(tasks, acceptConnTask)) 
 	{
 		LOG_ERROR(log, "Failed to push accept task to queue.");
+		Task_Delete(acceptConnTask);
 		return false;
 	}
 
@@ -111,15 +112,20 @@ int main()
 {
 	int returnCode = EXIT_FAILURE;
 	Logger* log = Logger_Create();
-	ServerContext* serverCtx = ServerContext_New(log);
+	// ServerContext* serverCtx = ServerContext_New(log);
+	TaskQueue* tasks = NULL;
+	TaskRunner* runners[RUNNER_COUNT] = {0};
+	IrcCmdQueue* cmds = NULL;
 
 	LOG_INFO(log, "Server starting");
 
-	TaskQueue* tasks = TaskQueue_New(256);
+	tasks = TaskQueue_New(256);
 	if (tasks == NULL)
 		goto cleanup;
 
-	TaskRunner *runners[RUNNER_COUNT] = {0};
+	cmds = IrcCmdQueue_New(1024);
+	if (cmds == NULL)
+		goto cleanup;
 
 	for (size_t i = 0; i < RUNNER_COUNT; i++)
 	{
@@ -131,8 +137,23 @@ int main()
 		}
 	}
 
-	if(!StartServer(log, tasks))
+	Task* cmdExecutorTask = IrcCmdExecutorTask_New(log, tasks, cmds);
+	if (cmdExecutorTask == NULL)
+	{
+		LOG_ERROR(log, "Failed to create command executor task.");
 		goto cleanup;
+	}
+
+	if (!TaskQueue_Push(tasks, cmdExecutorTask)) 
+	{
+		LOG_ERROR(log, "Failed to push accept task to queue.");
+		Task_Delete(cmdExecutorTask);
+		goto cleanup;
+	}
+
+	if(!StartServer(log, tasks, cmds))
+		goto cleanup;
+
 
 	returnCode = EXIT_SUCCESS;
 
@@ -143,8 +164,10 @@ cleanup:
 		TaskRunner_Delete(runners[i]);
 	}
 
+	IrcCmdQueue_Delete(cmds);
+
 	TaskQueue_Delete(tasks);
-	ServerContext_Delete(serverCtx);
+	// ServerContext_Delete(serverCtx);
 	Logger_Destroy(log);
 
 	return returnCode;

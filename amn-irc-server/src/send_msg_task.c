@@ -1,5 +1,6 @@
 #include "send_msg_task.h"
 
+#include "irc_msg_unparser.h"
 #include "irc_msg_writer.h"
 
 #include <stdlib.h>
@@ -7,16 +8,18 @@
 typedef struct SendMsgContext
 {
 	const Logger* log;
-	const char* msg;
+	const IrcMsg* msg;
+
+	IrcMsgUnparser* unparser;
 	IrcMsgWriter* writer;
 }
 SendMsgContext;
 
-static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, const char* msg);
+static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, const IrcMsg* msg);
 static void SendMsgContext_Delete(void* context);
 static void SendMessages(void* context);
 
-Task* SendMsgTask_New(const Logger* log, int socket, const char* msg)
+Task* SendMsgTask_New(const Logger* log, int socket, const IrcMsg* msg)
 {
 	SendMsgContext* ctx = SendMsgContext_New(log, socket, msg);
 	if (ctx == NULL)
@@ -36,7 +39,7 @@ Task* SendMsgTask_New(const Logger* log, int socket, const char* msg)
 	return self;
 }
 
-static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, const char* msg)
+static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, const IrcMsg* msg)
 {
 	SendMsgContext* ctx = malloc(sizeof(SendMsgContext));
 	if (ctx == NULL)
@@ -48,10 +51,19 @@ static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, const c
 	ctx->log = log;
 	ctx->msg = msg;
 
+	ctx->unparser = IrcMsgUnparser_New(log);
+	if (ctx->unparser == NULL)
+	{
+		LOG_ERROR(log, "Failed to create IrcMsgUnparser.");
+		free(ctx);
+		return NULL;
+	}
+
 	ctx->writer = IrcMsgWriter_New(log, socket);
 	if (ctx->writer == NULL)
 	{
 		LOG_ERROR(log, "Failed to create IrcMsgWriter.");
+		free(ctx->unparser);
 		free(ctx);
 		return NULL;
 	}
@@ -71,5 +83,16 @@ static void SendMessages(void* context)
 {
 	SendMsgContext* ctx = (SendMsgContext*) context;
 
-	IrcMsgWriter_Write(ctx->writer, ctx->msg);
+	const char* rawMsg = IrcMsgUnparser_Unparse(ctx->unparser, ctx->msg);
+	if (rawMsg == NULL)
+	{
+		LOG_ERROR(ctx->log, "Failure to unparse message");
+		return;
+	}
+
+	if (!IrcMsgWriter_Write(ctx->writer, rawMsg))
+	{
+		LOG_ERROR(ctx->log, "Failure to write message");
+		return;
+	}
 }

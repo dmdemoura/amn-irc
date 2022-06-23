@@ -51,7 +51,7 @@ static void* AllocAndCopy(const void* start, const void* end)
 	char* copy = malloc(size + 1);
 	if (copy == NULL)
 	{
-		return false;
+		return NULL;
 	}
 
 	memcpy(copy, start, size);
@@ -253,15 +253,12 @@ static bool IrcMsgParser_ParseMiddleParam(IrcMsgParser* self)
 	}
 
 	char* param = AllocAndCopy(paramStart, paramEnd);
-
-	char** params = realloc(self->msg->params, sizeof(char**) * self->msg->paramCount + 1);
-	if (params == NULL)
+	if (param == NULL)
 	{
-		LOG_ERROR(self->log, "Failed to (re)allocate params array");
+		LOG_ERROR(self->log, "Failed to allocate parameter.");
 		return false;
 	}
 
-	self->msg->params = params;
 	self->msg->params[self->msg->paramCount] = param;
 	self->msg->paramCount += 1;
 
@@ -281,15 +278,12 @@ static bool IrcMsgParser_ParseTrailingParam(IrcMsgParser* self)
 	}
 
 	char* param = AllocAndCopy(paramStart, paramEnd);
-
-	char** params = realloc(self->msg->params, self->msg->paramCount + 1);
-	if (params == NULL)
+	if (param == NULL)
 	{
-		LOG_ERROR(self->log, "Failed to (re)allocate params array");
+		LOG_ERROR(self->log, "Failed to allocate parameter.");
 		return false;
 	}
 
-	self->msg->params = params;
 	self->msg->params[self->msg->paramCount] = param;
 	self->msg->paramCount += 1;
 
@@ -298,9 +292,17 @@ static bool IrcMsgParser_ParseTrailingParam(IrcMsgParser* self)
 
 static bool IrcMsgParser_ParseParams(IrcMsgParser* self)
 {
+	IrcMsgParser_ParseSpace(self);
+
 	while (*self->rawMsg != '\r')
 	{
-		IrcMsgParser_ParseSpace(self);
+		if (self->msg->paramCount == IRC_MSG_MAX_PARAMS)
+		{
+			LOG_WARN(self->log, "Too many parameters. Expected at most: %zu",
+					IRC_MSG_MAX_PARAMS);
+
+			return false;
+		}
 
 		if (*self->rawMsg == ':')
 		{
@@ -315,6 +317,8 @@ static bool IrcMsgParser_ParseParams(IrcMsgParser* self)
 		{
 			return false;
 		}
+
+		IrcMsgParser_ParseSpace(self);
 	}
 
 	return true;

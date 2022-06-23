@@ -69,6 +69,8 @@ static void* TaskRunner_Run(void* arg)
 		}
 
 		Task_Run(task);
+
+		Task_Delete(task);
 	}
 
 	return NULL;

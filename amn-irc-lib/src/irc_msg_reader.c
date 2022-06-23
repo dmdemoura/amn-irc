@@ -8,8 +8,9 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define BUF_SIZE 512
-#define MSG_SIZE 512
+#include "irc_msg.h"
+
+#define BUF_SIZE IRC_MSG_SIZE
 
 struct IrcMsgReader
 {
@@ -22,7 +23,7 @@ struct IrcMsgReader
 	// Buffer to assemble message.
 	// A reference is returned to the caller after each Read
 	// call, and is valid until the next Read or Delete call.
-	char msgBuffer[MSG_SIZE + 1];
+	char msgBuffer[IRC_MSG_SIZE + 1];
 
 	// Position on the readBuffer where the next message starts.
 	// SIZE_MAX if the next message is not available.
@@ -72,7 +73,7 @@ const char* IrcMsgReader_Read(IrcMsgReader* self)
 	{
 		LOG_DEBUG(self->log, "Waiting for mesage");
 
-		readLen = read(self->socket, self->readBuffer, MSG_SIZE);
+		readLen = read(self->socket, self->readBuffer, IRC_MSG_SIZE);
 
 		LOG_DEBUG(self->log, "Received %zd bytes", readLen);
 
@@ -93,7 +94,7 @@ const char* IrcMsgReader_Read(IrcMsgReader* self)
 		// Copy until the CRLF or the read length otherwise.
 		size_t copyLen = (size_t) (msgEnd != -1 ? msgEnd + 1 : readLen);
 
-		if (msgLen + copyLen <= MSG_SIZE)
+		if (msgLen + copyLen <= IRC_MSG_SIZE)
 		{
 			memcpy(self->msgBuffer + msgLen, self->readBuffer, copyLen);
 			msgLen += copyLen;

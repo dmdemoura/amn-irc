@@ -33,7 +33,12 @@ bool IrcMsgValidator_ValidateOrigin(const IrcMsgValidator* self,
 	return true;
 }
 
-bool IrcMsgValidator_ValidateNick(const IrcMsgValidator* self, const char* nick);
+bool IrcMsgValidator_ValidateNick(const IrcMsgValidator* self,
+		const char* nick, const char* nickEnd)
+{
+	(void) self, (void) nick, (void) nickEnd;
+	return true;
+}
 
 bool IrcMsgValidator_ValidateUser(const IrcMsgValidator* self,
 		const char* user, const char* userEnd)
@@ -46,6 +51,13 @@ bool IrcMsgValidator_ValidateHost(const IrcMsgValidator* self,
 		const char* host, const char* hostEnd)
 {
 	(void) self, (void) host, (void) hostEnd;
+	return true;
+}
+
+bool IrcMsgValidator_ValidateServer(const IrcMsgValidator* self,
+		const char* server, const char* serverEnd)
+{
+	(void) self, (void) server, (void) serverEnd;
 	return true;
 }
 
@@ -72,7 +84,11 @@ bool IrcMsgValidator_ValidateTrailingParam(const IrcMsgValidator* self,
 
 bool IrcMsgValidator_ValidateChannel(const IrcMsgValidator* self, const char* channel);
 
-bool IrcMsgValidator_ValidateMask(const IrcMsgValidator* self, const char* mask);
+bool IrcMsgValidator_ValidateMask(const IrcMsgValidator* self, const char* mask)
+{
+	(void) self, (void) mask;
+	return true;
+}
 
 bool IrcMsgValidator_ValidateChstring(const IrcMsgValidator* self, const char* chstring);
 

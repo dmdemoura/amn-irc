@@ -1,7 +1,8 @@
-#include "accept_conn_task.h"
+#include "receive_msg_task.h"
 
 #include "irc_msg_reader.h"
 #include "irc_msg_parser.h"
+#include "irc_cmd_parser.h"
 
 #include <stdlib.h>
 
@@ -12,22 +13,24 @@ typedef struct IrcCmdExecutorContext
 {
 	const Logger* log;
 	TaskQueue* tasks;
+	IrcCmdQueue* cmds;
 
 	int socket;
 	IrcMsgReader* reader;
 	IrcMsgValidator* validator;
-	IrcMsgParser* parser;
+	IrcMsgParser* msgParser;
+	IrcCmdParser* cmdParser;
 }
 ReceiveMsgContext;
 
 static ReceiveMsgContext* ReceiveMsgContext_New(
-		const Logger* log, TaskQueue* tasks, int socket);
+		const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds, int socket);
 static void ReceiveMsgContext_Delete(void* context);
 static void ReadMessages(void* context);
 
-Task* ReceiveMsgTask_New(const Logger* log, TaskQueue* tasks, int socket)
+Task* ReceiveMsgTask_New(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds, int socket)
 {
-	ReceiveMsgContext* context = ReceiveMsgContext_New(log, tasks, socket);
+	ReceiveMsgContext* context = ReceiveMsgContext_New(log, tasks, cmds, socket);
 	if (context == NULL)
 	{
 		return NULL;
@@ -44,7 +47,7 @@ Task* ReceiveMsgTask_New(const Logger* log, TaskQueue* tasks, int socket)
 }
 
 static ReceiveMsgContext* ReceiveMsgContext_New(
-		const Logger* log, TaskQueue* tasks, int socket)
+		const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds, int socket)
 {
 	ReceiveMsgContext* ctx = malloc(sizeof(ReceiveMsgContext));
 	if (ctx == NULL)
@@ -53,6 +56,7 @@ static ReceiveMsgContext* ReceiveMsgContext_New(
 	*ctx = (ReceiveMsgContext) {0}; // Default initialize ctx.
 	ctx->log = log;
 	ctx->tasks = tasks;
+	ctx->cmds = cmds;
 	ctx->socket = socket;
 
 	ctx->reader = IrcMsgReader_New(log, socket);
@@ -63,14 +67,19 @@ static ReceiveMsgContext* ReceiveMsgContext_New(
 	if (ctx->validator == NULL)
 		goto error;
 
-	ctx->parser = IrcMsgParser_New(ctx->log, ctx->validator);
-	if (ctx->parser == NULL)
+	ctx->msgParser = IrcMsgParser_New(ctx->log, ctx->validator);
+	if (ctx->msgParser == NULL)
+		goto error;
+
+	ctx->cmdParser = IrcCmdParser_New(ctx->log, ctx->validator);
+	if (ctx->cmdParser == NULL)
 		goto error;
 
 	return ctx;
 error:
-	// These function all are safe to call with null.
-	IrcMsgParser_Delete(ctx->parser);
+	// These functions are all safe to call with null.
+	IrcCmdParser_Delete(ctx->cmdParser);
+	IrcMsgParser_Delete(ctx->msgParser);
 	IrcMsgValidator_Delete(ctx->validator);
 	IrcMsgReader_Delete(ctx->reader);
 	free(ctx);
@@ -87,7 +96,8 @@ static void ReceiveMsgContext_Delete(void* arg)
 
 	ReceiveMsgContext* ctx = (ReceiveMsgContext*) arg;
 
-	IrcMsgParser_Delete(ctx->parser);
+	IrcCmdParser_Delete(ctx->cmdParser);
+	IrcMsgParser_Delete(ctx->msgParser);
 	IrcMsgValidator_Delete(ctx->validator);
 	IrcMsgReader_Delete(ctx->reader);
 
@@ -112,7 +122,7 @@ static void ReadMessages(void* arg)
 			return;
 		}
 
-		const IrcMsg* msg = IrcMsgParser_Parse(ctx->parser, rawMsg);
+		const IrcMsg* msg = IrcMsgParser_Parse(ctx->msgParser, rawMsg);
 		if (msg == NULL)
 		{
 			LOG_WARN(ctx->log, "Failed to parse message.");
@@ -130,7 +140,7 @@ static void ReadMessages(void* arg)
 				"\tParams 03: %s\n"
 				"\tParams 04: %s\n"
 				"\tParams 05: %s\n",
-				msg->prefix.origin,
+				msg->prefix.origin != NULL ? msg->prefix.origin : "[NULL]",
 				msg->prefix.username != NULL ? msg->prefix.username : "[NULL]",
 				msg->prefix.hostname != NULL ? msg->prefix.hostname : "[NULL]",
 				msg->cmd,
@@ -140,5 +150,18 @@ static void ReadMessages(void* arg)
 				msg->paramCount >= 3 ? msg->params[2] : "[EMPTY]",
 				msg->paramCount >= 4 ? msg->params[3] : "[EMPTY]",
 				msg->paramCount >= 5 ? msg->params[4] : "[EMPTY]");
+
+		IrcCmd* cmd = IrcCmdParser_Parse(ctx->cmdParser, msg, ctx->socket);
+		if (cmd == NULL)
+		{
+			LOG_WARN(ctx->log, "Failed to parse command.");
+			continue;
+		}
+
+		if (!IrcCmdQueue_Push(ctx->cmds, cmd))
+		{
+			LOG_ERROR(ctx->log, "Failed to add command to queue");
+			return;
+		}
 	}
 }

@@ -1,6 +1,8 @@
 #ifndef AMN_IRC_CMD_TYPE_H
 #define AMN_IRC_CMD_TYPE_H
 
+#include <stddef.h>
+
 typedef enum IrcCmdType
 {
 	// Not an actual command, just means the variable is empty.
@@ -61,14 +63,53 @@ typedef enum IrcCmdType
 	IrcCmdType_UserHost,
 	IrcCmdType_IsOn,
 
-	// Error Replies
-	// https://datatracker.ietf.org/doc/html/rfc1459#section-6.1
-	IrcCmdType_Err_NoSuchNick,
-	IrcCmdType_Err_NoSuchServer,
-	IrcCmdType_Err_NoSuchChannel,
-	// TODO: Finish replies
-
+	// Not an actual command, but the length of the enum
+	IrcCmdType_Len,
 } IrcCmdType;
+
+const char* IRC_CMD_TYPE_STRS[] = {
+	NULL,
+	"PASS",
+	"NICK",
+	"USER",
+	"SERVER",
+	"OPERATOR",
+	"QUIT",
+	"SQUIT",
+	"JOIN",
+	"PART",
+	"MODE",
+	"TOPIC",
+	"NAMES",
+	"LIST",
+	"INVITE",
+	"KICK",
+	"VERSION",
+	"STATS",
+	"LINKS",
+	"TIME",
+	"CONNECT",
+	"TRACE",
+	"ADMIN",
+	"INFO",
+	"PRIVMSG",
+	"NOTICE",
+	"WHO",
+	"WHOIS",
+	"WHOWAS",
+	"KILL",
+	"PING",
+	"PONG",
+	"ERROR",
+	"AWAY",
+	"REHASH",
+	"RESTART",
+	"SUMMON",
+	"USERS",
+	"WALLOPS",
+	"USERHOST",
+	"ISON"
+};
 
 #endif // AMN_IRC_CMD_TYPE_H
 

@@ -14,13 +14,17 @@ void IrcMsgValidator_Delete(IrcMsgValidator* self);
 bool IrcMsgValidator_ValidateOrigin(const IrcMsgValidator* self,
 		const char* origin, const char* originEnd);
 
-bool IrcMsgValidator_ValidateNick(const IrcMsgValidator* self, const char* nick);
+bool IrcMsgValidator_ValidateNick(const IrcMsgValidator* self,
+		const char* nick, const char* nickEnd);
 
 bool IrcMsgValidator_ValidateUser(const IrcMsgValidator* self,
 		const char* user, const char* userEnd);
 
 bool IrcMsgValidator_ValidateHost(const IrcMsgValidator* self,
 		const char* host, const char* hostEnd);
+
+bool IrcMsgValidator_ValidateServer(const IrcMsgValidator* self,
+		const char* server, const char* serverEnd);
 
 bool IrcMsgValidator_ValidateCommand(const IrcMsgValidator* self,
 		const char* command, const char* commandEnd);

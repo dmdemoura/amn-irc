@@ -8,10 +8,16 @@ add_executable(${PROJECT_NAME}
 	"src/task_queue.c"
 	"src/task_runner.h"
 	"src/task_runner.c"
+	"src/irc_cmd_queue.h"
+	"src/irc_cmd_queue.c"
+	"src/irc_cmd_executor_task.h"
+	"src/irc_cmd_executor_task.c"
 	"src/accept_conn_task.h"
 	"src/accept_conn_task.c"
 	"src/receive_msg_task.h"
 	"src/receive_msg_task.c"
+	"src/send_msg_task.h"
+	"src/send_msg_task.c"
 	"src/main.c"
 )
 

@@ -11,13 +11,14 @@ typedef struct AcceptConnContext
 {
 	const Logger* log;
 	TaskQueue* tasks;
+	IrcCmdQueue* cmds;
 	int socket;
 }
 AcceptConnContext;
 
 static void WaitForConnections(void* context);
 
-Task* AcceptConnTask_New(const Logger* log, TaskQueue* tasks, int socket)
+Task* AcceptConnTask_New(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds, int socket)
 {
 	AcceptConnContext* context = malloc(sizeof(AcceptConnContext));
 	if (context == NULL)
@@ -27,6 +28,7 @@ Task* AcceptConnTask_New(const Logger* log, TaskQueue* tasks, int socket)
 
 	context->log = log;
 	context->tasks = tasks;
+	context->cmds = cmds;
 	context->socket = socket;
 
 	Task* self = Task_Create(WaitForConnections, context, free);
@@ -54,7 +56,8 @@ static void WaitForConnections(void* arg)
 			break;
 		}
 
-		Task* receiveTask = ReceiveMsgTask_New(ctx->log, ctx->tasks, clientSocket);	
+		Task* receiveTask = ReceiveMsgTask_New(
+				ctx->log, ctx->tasks, ctx->cmds, clientSocket);	
 		if (receiveTask == NULL)
 		{
 			LOG_ERROR(ctx->log, "Failed to create ReceiveMsgTask.");

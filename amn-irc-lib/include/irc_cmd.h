@@ -3,10 +3,11 @@
 
 #include "irc_msg.h"
 
+#define IRC_CMD_PRIVMSG_MAX_RECEIVERS 14
+
 // https://datatracker.ietf.org/doc/html/rfc1459#section-4.1.2
 typedef struct IrcCmdNick
 {
-	IrcMsgPrefix prefix;
 	char* nickname;
 	size_t hopCount;
 } IrcCmdNick;
@@ -14,7 +15,6 @@ typedef struct IrcCmdNick
 // https://datatracker.ietf.org/doc/html/rfc1459#section-4.1.3
 typedef struct IrcCmdUser
 {
-	IrcMsgPrefix prefix;
 	char* username;
 	char* hostname;
 	char* servername;
@@ -24,8 +24,8 @@ typedef struct IrcCmdUser
 // https://datatracker.ietf.org/doc/html/rfc1459#section-4.4.1
 typedef struct IrcCmdPrivMsg
 {
-	IrcMsgPrefix prefix;
-	char** receiver;
+	char* receiver[IRC_CMD_PRIVMSG_MAX_RECEIVERS];
+	size_t receiverCount;
 	char* text;
 } IrcCmdPrivMsg; 
 
@@ -33,6 +33,7 @@ typedef struct IrcCmdPrivMsg
 typedef struct IrcCmd
 {
 	IrcCmdType type;
+	IrcMsgPrefix prefix;
 	int peerSocket;
 	union {
 		IrcCmdNick nick;
