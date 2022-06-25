@@ -67,49 +67,7 @@ typedef enum IrcCmdType
 	IrcCmdType_Len,
 } IrcCmdType;
 
-const char* IRC_CMD_TYPE_STRS[] = {
-	NULL,
-	"PASS",
-	"NICK",
-	"USER",
-	"SERVER",
-	"OPERATOR",
-	"QUIT",
-	"SQUIT",
-	"JOIN",
-	"PART",
-	"MODE",
-	"TOPIC",
-	"NAMES",
-	"LIST",
-	"INVITE",
-	"KICK",
-	"VERSION",
-	"STATS",
-	"LINKS",
-	"TIME",
-	"CONNECT",
-	"TRACE",
-	"ADMIN",
-	"INFO",
-	"PRIVMSG",
-	"NOTICE",
-	"WHO",
-	"WHOIS",
-	"WHOWAS",
-	"KILL",
-	"PING",
-	"PONG",
-	"ERROR",
-	"AWAY",
-	"REHASH",
-	"RESTART",
-	"SUMMON",
-	"USERS",
-	"WALLOPS",
-	"USERHOST",
-	"ISON"
-};
+extern const char* const IRC_CMD_TYPE_STRS[];
 
 #endif // AMN_IRC_CMD_TYPE_H
 

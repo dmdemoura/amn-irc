@@ -36,6 +36,39 @@ bool IrcMsgPrefix_Clone(const IrcMsgPrefix* self, IrcMsgPrefix* clone)
 	return true;
 }
 
+IrcMsg* IrcMsg_Clone(const IrcMsg* self)
+{
+	IrcMsg* clone = malloc(sizeof(IrcMsg));
+	if (clone == NULL)
+	{
+		return NULL;
+	}
+
+	*clone = (IrcMsg){0};
+	clone->cmd = self->cmd;
+	clone->replyNumber = self->replyNumber;
+
+	if (!IrcMsgPrefix_Clone(&self->prefix, &clone->prefix))
+	{
+		IrcMsg_Delete(clone);
+		return NULL;
+	}
+
+	for (size_t i = 0; i < self->paramCount; i++)
+	{
+		clone->params[i] = StrUtils_Clone(self->params[i]);
+		if (clone->params[i] == NULL)
+		{
+			IrcMsg_Delete(clone);
+			return NULL;
+		}
+
+		clone->paramCount++;
+	}
+
+	return clone;
+}
+
 void IrcMsg_Delete(IrcMsg* self)
 {
 	if (self == NULL)

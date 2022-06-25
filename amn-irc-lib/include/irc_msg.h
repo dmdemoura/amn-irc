@@ -45,6 +45,7 @@ typedef struct IrcMsg
 	size_t paramCount;
 } IrcMsg;
 
+IrcMsg* IrcMsg_Clone(const IrcMsg* self);
 void IrcMsg_Delete(IrcMsg* self);
 
 #endif // AMN_IRC_MSG_H

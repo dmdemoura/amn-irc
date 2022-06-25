@@ -2,6 +2,7 @@
 
 #include "array_list.h"
 #include "send_msg_task.h"
+#include "irc_cmd_unparser.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -58,6 +59,8 @@ typedef struct IrcCmdExecutorContext
 	IrcCmdQueue* cmds;
 
 	ArrayList* users;
+	IrcMsgValidator* msgValidator;
+	IrcCmdUnparser* cmdUnparser;
 }
 IrcCmdExecutorContext;
 
@@ -70,7 +73,7 @@ static bool ExecuteCmd(IrcCmdExecutorContext* ctx, IrcCmd* cmd);
 static bool ExecuteCmdNick(
 		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdNick* cmd);
 
-static bool Reply(IrcCmdExecutorContext* ctx, const int peerSocket, const char* rawMsg);
+static bool Reply(IrcCmdExecutorContext* ctx, const int peerSocket, const IrcMsg* msg);
 
 Task* IrcCmdExecutorTask_New(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds)
 {
@@ -97,16 +100,31 @@ static IrcCmdExecutorContext* IrcCmdExecutorContext_New(
 	if (ctx == NULL)
 		return NULL;
 
-	ctx->users = ArrayList_New(100, 100, sizeof(User), User_Delete);
-	if (ctx->users == NULL)
-	{
-		free(ctx);
-		return NULL;
-	}
-
+	*ctx = (IrcCmdExecutorContext) {0};
 	ctx->log = log;
 	ctx->tasks = tasks;
 	ctx->cmds = cmds;
+
+	ctx->users = ArrayList_New(100, 100, sizeof(User), User_Delete);
+	if (ctx->users == NULL)
+	{
+		IrcCmdExecutorContext_Delete(ctx);
+		return NULL;
+	}
+
+	ctx->msgValidator = IrcMsgValidator_New(log);
+	if (ctx->msgValidator == NULL)
+	{
+		IrcCmdExecutorContext_Delete(ctx);
+		return NULL;
+	}
+
+	ctx->cmdUnparser = IrcCmdUnparser_New(log, ctx->msgValidator);
+	if (ctx->users == NULL)
+	{
+		IrcCmdExecutorContext_Delete(ctx);
+		return NULL;
+	}
 
 	return ctx;
 }
@@ -187,8 +205,16 @@ static bool ExecuteCmdNick(
 			// TODO: Error reply and kill command.
 			LOG_INFO(ctx->log, "Nickname collision: %s.", cmd->nickname);
 
-			if (!Reply(ctx, peerSocket,
-						":servername.todo 436 nick.todo :Nickname collision KILL\r\n"))
+			IrcMsg msg = {
+				.prefix = {
+					.origin = "servername.todo",
+				},
+				.replyNumber = 436,
+				.params = { "nick.todo", "Nickname collision KILL" },
+				.paramCount = 2
+			};
+
+			if (!Reply(ctx, peerSocket, &msg))
 			{
 				return false;
 			}

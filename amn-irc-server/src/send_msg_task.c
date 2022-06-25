@@ -8,7 +8,7 @@
 typedef struct SendMsgContext
 {
 	const Logger* log;
-	const IrcMsg* msg;
+	IrcMsg* msg;
 
 	IrcMsgUnparser* unparser;
 	IrcMsgWriter* writer;
@@ -49,12 +49,19 @@ static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, const I
 	}
 
 	ctx->log = log;
-	ctx->msg = msg;
+	ctx->msg = IrcMsg_Clone(msg);
+	if (ctx->msg == NULL)
+	{
+		LOG_ERROR(log, "Failed to clone IrcMsg.");
+		free(ctx);
+		return NULL;
+	}
 
 	ctx->unparser = IrcMsgUnparser_New(log);
 	if (ctx->unparser == NULL)
 	{
 		LOG_ERROR(log, "Failed to create IrcMsgUnparser.");
+		free(ctx->msg);
 		free(ctx);
 		return NULL;
 	}
@@ -64,6 +71,7 @@ static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, const I
 	{
 		LOG_ERROR(log, "Failed to create IrcMsgWriter.");
 		free(ctx->unparser);
+		free(ctx->msg);
 		free(ctx);
 		return NULL;
 	}
@@ -84,6 +92,10 @@ static void SendMessages(void* context)
 	SendMsgContext* ctx = (SendMsgContext*) context;
 
 	const char* rawMsg = IrcMsgUnparser_Unparse(ctx->unparser, ctx->msg);
+
+	free(ctx->msg);
+	ctx->msg = NULL;
+
 	if (rawMsg == NULL)
 	{
 		LOG_ERROR(ctx->log, "Failure to unparse message");
