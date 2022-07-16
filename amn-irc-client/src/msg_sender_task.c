@@ -1,6 +1,7 @@
 #include "msg_sender_task.h"
 
 #include "irc_msg_writer.h"
+#include "task.h"
 #include "user_input_queue.h"
 
 #include <stdlib.h>
@@ -16,7 +17,7 @@ typedef struct MsgSenderContext
 MsgSenderContext;
 
 static MsgSenderContext* MsgSenderContext_New(const Logger* log, UserInputQueue* userInput, int socket);
-static void MsgSenderContext_Run(void* ctx);
+static TaskStatus MsgSenderContext_Run(void* ctx);
 
 Task* MsgSenderTask_New(const Logger* log, UserInputQueue* userInput, int socket)
 {
@@ -60,7 +61,7 @@ static MsgSenderContext* MsgSenderContext_New(const Logger* log, UserInputQueue*
 	return self;
 }
 
-static void MsgSenderContext_Run(void* arg)
+static TaskStatus MsgSenderContext_Run(void* arg)
 {
 	MsgSenderContext* ctx = (MsgSenderContext*) arg;	
 
@@ -68,13 +69,15 @@ static void MsgSenderContext_Run(void* arg)
 	if (userInput == NULL)
 	{
 		LOG_ERROR(ctx->log, "Failed to pop user input from queue!");
-		return;
+		return TaskStatus_Failed;
 	}
 
 
 	if (!IrcMsgWriter_Write(ctx->writer, userInput))
 	{
 		LOG_ERROR(ctx->log, "Failed to write message to socket!");
-		return;
+		return TaskStatus_Failed;
 	}
+
+	return TaskStatus_Done;
 }

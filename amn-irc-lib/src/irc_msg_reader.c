@@ -1,5 +1,6 @@
 #include "irc_msg_reader.h"
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -74,6 +75,11 @@ const char* IrcMsgReader_Read(IrcMsgReader* self)
 		LOG_DEBUG(self->log, "Waiting for mesage");
 
 		readLen = read(self->socket, self->readBuffer, IRC_MSG_SIZE);
+
+		if (readLen == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+		{
+			return NULL;
+		}
 
 		LOG_DEBUG(self->log, "Received %zd bytes", readLen);
 

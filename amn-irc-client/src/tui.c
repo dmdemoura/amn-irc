@@ -177,17 +177,17 @@ static bool Tui_TryUpdateChat(Tui* self)
 		char* line = NULL;
 		switch (UserOutputQueue_TryPop(self->userOutput, &line))
 		{
-			case UserOutputQueue_TryPopResult_Ok:
+			case Queue_TryPopResult_Ok:
 				if (!Tui_DisplayChatLine(self, line))
 				{
 					LOG_ERROR(self->log, "Failed to display chat line!");
 					return false;
 				}
 				break;
-			case UserOutputQueue_TryPopResult_Empty:
+			case Queue_TryPopResult_Empty:
 				// Nothing to do for now.
 				return true;
-			case UserOutputQueue_TryPopResult_Error:
+			case Queue_TryPopResult_Error:
 				LOG_ERROR(self->log, "Failed to pop user output from queue!");
 				return false;
 		}

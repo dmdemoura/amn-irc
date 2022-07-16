@@ -4,6 +4,7 @@
 #include "send_msg_task.h"
 #include "irc_cmd_unparser.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -68,7 +69,7 @@ static IrcCmdExecutorContext* IrcCmdExecutorContext_New(
 		const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds);
 static void IrcCmdExecutorContext_Delete(void* context);
 
-static void WaitForCmds(void* context);
+static TaskStatus WaitForCmds(void* context);
 static bool ExecuteCmd(IrcCmdExecutorContext* ctx, IrcCmd* cmd);
 static bool ExecuteCmdNick(
 		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdNick* cmd);
@@ -142,30 +143,32 @@ static void IrcCmdExecutorContext_Delete(void* arg)
 	free(ctx);
 }
 
-static void WaitForCmds(void* arg)
+static TaskStatus WaitForCmds(void* arg)
 {
 	IrcCmdExecutorContext* ctx = (IrcCmdExecutorContext*) arg;
 	
-	// TODO: Figure out a stop condition. Maybe an atomic bool?
-	while(true)
+	IrcCmd* cmd = IrcCmdQueue_Pop(ctx->cmds);
+	if (cmd == NULL && errno == EAGAIN)
 	{
-		IrcCmd* cmd = IrcCmdQueue_Pop(ctx->cmds);
-		if (cmd == NULL)
-		{
-			LOG_ERROR(ctx->log, "Failed to get command from queue!");
-			return;
-		}
-
-		bool result = ExecuteCmd(ctx, cmd);
-
-		IrcCmd_Delete(cmd);
-
-		if (!result)
-		{
-			LOG_ERROR(ctx->log, "Failed to execute command!");
-			return;
-		}
+		return TaskStatus_Yield;
 	}
+	else if (cmd == NULL)
+	{
+		LOG_ERROR(ctx->log, "Failed to get command from queue!");
+		return TaskStatus_Failed;
+	}
+
+	bool result = ExecuteCmd(ctx, cmd);
+
+	IrcCmd_Delete(cmd);
+
+	if (!result)
+	{
+		LOG_ERROR(ctx->log, "Failed to execute command!");
+		return TaskStatus_Failed;
+	}
+
+	return TaskStatus_Yield;
 }
 
 static bool ExecuteCmd(IrcCmdExecutorContext* ctx, IrcCmd* cmd)
@@ -210,7 +213,7 @@ static bool ExecuteCmdNick(
 					.origin = "servername.todo",
 				},
 				.replyNumber = 436,
-				.params = { "nick.todo", "Nickname collision KILL" },
+				.params = { cmd->nickname, "Nickname collision KILL" },
 				.paramCount = 2
 			};
 

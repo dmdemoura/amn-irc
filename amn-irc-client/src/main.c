@@ -18,13 +18,7 @@
 #define RUNNER_COUNT 10
 #define PROTOCOL_IP 0
 #define SERVER_PORT "6667"
-
-
-/**
- * Beware globals.
- */
-volatile sig_atomic_t Amn_Signal_Flag = 0;
-
+#define TIMEOUT 10
 
 int main()
 {
@@ -54,15 +48,15 @@ int main()
 
 	LOG_INFO(log, "Starting amn-irc-client...");
 
-	tasks = TaskQueue_New(10);
+	tasks = TaskQueue_New(10, TIMEOUT);
 	if (tasks == NULL)
 		goto cleanup;
 
-	userInput = UserInputQueue_New(50);
+	userInput = UserInputQueue_New(50, TIMEOUT);
 	if (userInput == NULL)
 		goto cleanup;
 
-	userOutput = UserOutputQueue_New(200);
+	userOutput = UserOutputQueue_New(200, TIMEOUT);
 	if (userOutput == NULL)
 		goto cleanup;
 

@@ -1,5 +1,6 @@
 #include "irc_msg_unparser.h"
 
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -32,6 +33,7 @@ void IrcMsgUnparser_Delete(IrcMsgUnparser* self)
 
 static bool WriteChar(IrcMsgUnparser* self, char character);
 static bool WriteString(IrcMsgUnparser* self, const char* string);
+static bool WriteUInt32(IrcMsgUnparser* self, uint32_t number);
 
 static bool UnparsePrefix(IrcMsgUnparser* self);
 static bool UnparsePrefixOrigin(IrcMsgUnparser* self);
@@ -102,11 +104,43 @@ static bool WriteString(IrcMsgUnparser* self, const char* string)
 	return true;
 }
 
+static bool WriteUInt32(IrcMsgUnparser* self, uint32_t number)
+{
+	int len = snprintf(NULL, 0, "%" PRIu32, number);
+
+	if (len < 0)
+	{
+		LOG_ERROR(self->log, "Failed to format number to string");
+		return false;
+	}
+
+	if (self->msgLen + (size_t) len > IRC_MSG_SIZE)
+	{
+		LOG_WARN(self->log, "Message exceeds size limit. Limit: %zu", IRC_MSG_SIZE);
+		return false;
+	}
+
+	if (snprintf(self->buffer + self->msgLen, (size_t) len + 1, "%" PRIu32, number) != len)
+	{
+		LOG_ERROR(self->log, "Failed to format number to string");
+		return false;
+	}
+	self->msgLen += (size_t) len;
+
+	return true;
+}
+
+
 static bool UnparsePrefix(IrcMsgUnparser* self)
 {
 	if (self->msg->prefix.origin == NULL)
 	{
 		return true;
+	}
+
+	if (!WriteChar(self, ':'))
+	{
+		return false;
 	}
 
 	if (!UnparsePrefixOrigin(self))
@@ -179,9 +213,16 @@ static bool UnparsePrefixHostname(IrcMsgUnparser* self)
 
 static bool UnparseCommand(IrcMsgUnparser* self)
 {
-	const char* cmdStr = IRC_CMD_TYPE_STRS[self->msg->cmd];
+	if (self->msg->cmd != IrcCmdType_Null)
+	{
+		const char* cmdStr = IRC_CMD_TYPE_STRS[self->msg->cmd];
 
-	if (!WriteString(self, cmdStr))
+		if (!WriteString(self, cmdStr))
+		{
+			return false;
+		}
+	}
+	else if (!WriteUInt32(self, self->msg->replyNumber))
 	{
 		return false;
 	}
@@ -198,6 +239,14 @@ static bool UnparseParams(IrcMsgUnparser* self)
 
 	for (size_t i = 0; i < self->msg->paramCount; i++)
 	{
+		if (i > 0)
+		{
+			if (!WriteChar(self, ' '))
+			{
+				return false;
+			}
+		}
+
 		if (i == self->msg->paramCount - 1 && !WriteChar(self, ':'))
 		{
 			return false;	

@@ -2,6 +2,7 @@
 
 #include "receive_msg_task.h"
 
+#include <errno.h>
 #include <stdlib.h>
 
 #include <sys/socket.h>
@@ -16,7 +17,8 @@ typedef struct AcceptConnContext
 }
 AcceptConnContext;
 
-static void WaitForConnections(void* context);
+static TaskStatus WaitForConnections(void* context);
+static void DeleteContext(void* context);
 
 Task* AcceptConnTask_New(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds, int socket)
 {
@@ -31,7 +33,7 @@ Task* AcceptConnTask_New(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds,
 	context->cmds = cmds;
 	context->socket = socket;
 
-	Task* self = Task_Create(WaitForConnections, context, free);
+	Task* self = Task_Create(WaitForConnections, context, DeleteContext);
 	if (self == NULL)
 	{
 		free(context);
@@ -41,44 +43,57 @@ Task* AcceptConnTask_New(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds,
 	return self;
 }
 
-static void WaitForConnections(void* arg)
+static void DeleteContext(void* arg)
 {
 	AcceptConnContext* ctx = (AcceptConnContext*) arg;
-
-	while(1)
-	{
-		LOG_DEBUG(ctx->log, "Waiting for connection");
-
-		int clientSocket = accept(ctx->socket, NULL, NULL);
-		if (clientSocket == -1)
-		{
-			LOG_ERROR(ctx->log, "Failed to accept connection.");
-			break;
-		}
-
-		Task* receiveTask = ReceiveMsgTask_New(
-				ctx->log, ctx->tasks, ctx->cmds, clientSocket);	
-		if (receiveTask == NULL)
-		{
-			LOG_ERROR(ctx->log, "Failed to create ReceiveMsgTask.");
-
-			if (close(ctx->socket) != 0)
-			{
-				LOG_ERROR(ctx->log, "Failed to close client socket.");
-			}
-
-			break;
-		}
-
-		if (!TaskQueue_Push(ctx->tasks, receiveTask))
-		{
-			LOG_ERROR(ctx->log, "Failed to add task to queue.");
-			break;
-		}
-	}
 
 	if (close(ctx->socket) != 0)
 	{
 		LOG_ERROR(ctx->log, "Failed to close listen socket.");
 	}
+	
+	free(ctx);
+}
+
+static TaskStatus WaitForConnections(void* arg)
+{
+	AcceptConnContext* ctx = (AcceptConnContext*) arg;
+
+	LOG_DEBUG(ctx->log, "Waiting for connection");
+
+	int clientSocket = accept(ctx->socket, NULL, NULL);
+	if (clientSocket == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+	{
+		// Socket timeout
+		// LOG_DEBUG(ctx->log, "Timeout while accepting connections.");
+		errno = 0;
+		return TaskStatus_Yield;
+	}
+	else if (clientSocket == -1)
+	{
+		LOG_ERROR(ctx->log, "Failed to accept connection.");
+		return TaskStatus_Failed;
+	}
+
+	Task* receiveTask = ReceiveMsgTask_New(
+			ctx->log, ctx->tasks, ctx->cmds, clientSocket);	
+	if (receiveTask == NULL)
+	{
+		LOG_ERROR(ctx->log, "Failed to create ReceiveMsgTask.");
+
+		if (close(ctx->socket) != 0)
+		{
+			LOG_ERROR(ctx->log, "Failed to close client socket.");
+		}
+
+		return TaskStatus_Failed;
+	}
+
+	if (!TaskQueue_Push(ctx->tasks, receiveTask))
+	{
+		LOG_ERROR(ctx->log, "Failed to add task to queue.");
+		return TaskStatus_Failed;
+	}
+
+	return TaskStatus_Yield;
 }

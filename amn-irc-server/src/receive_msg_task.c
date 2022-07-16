@@ -4,6 +4,7 @@
 #include "irc_msg_parser.h"
 #include "irc_cmd_parser.h"
 
+#include <errno.h>
 #include <stdlib.h>
 
 #include <sys/socket.h>
@@ -26,7 +27,7 @@ ReceiveMsgContext;
 static ReceiveMsgContext* ReceiveMsgContext_New(
 		const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds, int socket);
 static void ReceiveMsgContext_Delete(void* context);
-static void ReadMessages(void* context);
+static TaskStatus ReadMessages(void* context);
 
 Task* ReceiveMsgTask_New(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds, int socket)
 {
@@ -109,59 +110,65 @@ static void ReceiveMsgContext_Delete(void* arg)
 	free(ctx);
 }
 
-static void ReadMessages(void* arg)
+static TaskStatus ReadMessages(void* arg)
 {
 	ReceiveMsgContext* ctx = (ReceiveMsgContext*) arg;
-	
-	while(true)
+
+	errno = 0;
+	const char* rawMsg = IrcMsgReader_Read(ctx->reader);
+	if (rawMsg == NULL && (errno == EAGAIN || errno == EWOULDBLOCK))
 	{
-		const char* rawMsg = IrcMsgReader_Read(ctx->reader);
-		if (rawMsg == NULL)
-		{
-			LOG_ERROR(ctx->log, "Failed to read message.");
-			return;
-		}
-
-		const IrcMsg* msg = IrcMsgParser_Parse(ctx->msgParser, rawMsg);
-		if (msg == NULL)
-		{
-			LOG_WARN(ctx->log, "Failed to parse message.");
-			continue;
-		}
-
-		LOG_DEBUG(ctx->log, "Parsed message:\n"
-				"\tPrefix Origin: %s\n"
-				"\tPrefix Username: %s\n"
-				"\tPrefix Hostname: %s\n"
-				"\tCommand: %d\n"
-				"\tParams Count: %zu\n"
-				"\tParams 01: %s\n"
-				"\tParams 02: %s\n"
-				"\tParams 03: %s\n"
-				"\tParams 04: %s\n"
-				"\tParams 05: %s\n",
-				msg->prefix.origin != NULL ? msg->prefix.origin : "[NULL]",
-				msg->prefix.username != NULL ? msg->prefix.username : "[NULL]",
-				msg->prefix.hostname != NULL ? msg->prefix.hostname : "[NULL]",
-				msg->cmd,
-				msg->paramCount,
-				msg->paramCount >= 1 ? msg->params[0] : "[EMPTY]",
-				msg->paramCount >= 2 ? msg->params[1] : "[EMPTY]",
-				msg->paramCount >= 3 ? msg->params[2] : "[EMPTY]",
-				msg->paramCount >= 4 ? msg->params[3] : "[EMPTY]",
-				msg->paramCount >= 5 ? msg->params[4] : "[EMPTY]");
-
-		IrcCmd* cmd = IrcCmdParser_Parse(ctx->cmdParser, msg, ctx->socket);
-		if (cmd == NULL)
-		{
-			LOG_WARN(ctx->log, "Failed to parse command.");
-			continue;
-		}
-
-		if (!IrcCmdQueue_Push(ctx->cmds, cmd))
-		{
-			LOG_ERROR(ctx->log, "Failed to add command to queue");
-			return;
-		}
+		// Socket timeout
+		// LOG_DEBUG(ctx->log, "Timeout while reading message.");
+		return TaskStatus_Yield;
 	}
+	else if (rawMsg == NULL)
+	{
+		LOG_ERROR(ctx->log, "Failed to read message.");
+		return TaskStatus_Failed;
+	}
+
+	const IrcMsg* msg = IrcMsgParser_Parse(ctx->msgParser, rawMsg);
+	if (msg == NULL)
+	{
+		LOG_WARN(ctx->log, "Failed to parse message.");
+		return TaskStatus_Yield;
+	}
+
+	LOG_DEBUG(ctx->log, "Parsed message:\n"
+			"\tPrefix Origin: %s\n"
+			"\tPrefix Username: %s\n"
+			"\tPrefix Hostname: %s\n"
+			"\tCommand: %d\n"
+			"\tParams Count: %zu\n"
+			"\tParams 01: %s\n"
+			"\tParams 02: %s\n"
+			"\tParams 03: %s\n"
+			"\tParams 04: %s\n"
+			"\tParams 05: %s\n",
+			msg->prefix.origin != NULL ? msg->prefix.origin : "[NULL]",
+			msg->prefix.username != NULL ? msg->prefix.username : "[NULL]",
+			msg->prefix.hostname != NULL ? msg->prefix.hostname : "[NULL]",
+			msg->cmd,
+			msg->paramCount,
+			msg->paramCount >= 1 ? msg->params[0] : "[EMPTY]",
+			msg->paramCount >= 2 ? msg->params[1] : "[EMPTY]",
+			msg->paramCount >= 3 ? msg->params[2] : "[EMPTY]",
+			msg->paramCount >= 4 ? msg->params[3] : "[EMPTY]",
+			msg->paramCount >= 5 ? msg->params[4] : "[EMPTY]");
+
+	IrcCmd* cmd = IrcCmdParser_Parse(ctx->cmdParser, msg, ctx->socket);
+	if (cmd == NULL)
+	{
+		LOG_WARN(ctx->log, "Failed to parse command.");
+		return TaskStatus_Yield;
+	}
+
+	if (!IrcCmdQueue_Push(ctx->cmds, cmd))
+	{
+		LOG_ERROR(ctx->log, "Failed to add command to queue");
+		return TaskStatus_Failed;
+	}
+
+	return TaskStatus_Yield;
 }

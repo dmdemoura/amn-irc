@@ -15,9 +15,7 @@ const size_t MAX_TIME_BYTES = 128;
 
 const size_t MAX_MSG_BYTES = 1024;
 
-const char* LOG_PATTERN = "[%s][%s] %s:%"PRIu32" - %s - %s\n%s%s";
-
-const char* LOG_PATTERN_WITH_ERRNO = "[%s][%s] %s:%"PRIu32" - %s - %s\n\tErrno: %s";
+const char* LOG_PATTERN = "[%s][%s] %s:%"PRIu32" - %s - %s\n%s%s%s";
 
 const char* LOG_LEVEL_STRS[] = {
 	"\033[38;2;⟨164⟩;⟨164⟩;⟨164⟩mDEBUG\033[0m",
@@ -121,7 +119,8 @@ void Logger_Log(
 				line, function,
 				messageOk ? message : "msg fmt err",
 				hasErrno ? "\tErrno: " : "",
-				hasErrno ? (errnoOk ? errorMsg : "errno fmt err") : "");
+				hasErrno ? (errnoOk ? errorMsg : "errno fmt err") : "",
+				hasErrno ? "\n" : "");
 	}
 
 	errno = 0;

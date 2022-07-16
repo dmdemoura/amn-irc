@@ -56,7 +56,7 @@ IrcMsg* IrcCmdUnparser_Unparse(IrcCmdUnparser* self, const IrcCmd* cmd)
 	bool success = false;
 	switch (cmd->type)
 	{
-		case IrcCmdType_Nick:
+	case IrcCmdType_Nick:
 		success = UnparseNick(self, msg, cmd);
 		break;
 	case IrcCmdType_User:

@@ -17,7 +17,7 @@ SendMsgContext;
 
 static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, const IrcMsg* msg);
 static void SendMsgContext_Delete(void* context);
-static void SendMessages(void* context);
+static TaskStatus SendMessages(void* context);
 
 Task* SendMsgTask_New(const Logger* log, int socket, const IrcMsg* msg)
 {
@@ -87,7 +87,7 @@ static void SendMsgContext_Delete(void* context)
 	free(ctx);
 }
 
-static void SendMessages(void* context)
+static TaskStatus SendMessages(void* context)
 {
 	SendMsgContext* ctx = (SendMsgContext*) context;
 
@@ -99,12 +99,16 @@ static void SendMessages(void* context)
 	if (rawMsg == NULL)
 	{
 		LOG_ERROR(ctx->log, "Failure to unparse message");
-		return;
+		return TaskStatus_Failed;
 	}
+
+	LOG_DEBUG(ctx->log, "Sending message: %s", rawMsg);
 
 	if (!IrcMsgWriter_Write(ctx->writer, rawMsg))
 	{
 		LOG_ERROR(ctx->log, "Failure to write message");
-		return;
+		return TaskStatus_Failed;
 	}
+
+	return TaskStatus_Done;
 }

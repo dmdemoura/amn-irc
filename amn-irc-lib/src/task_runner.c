@@ -1,12 +1,13 @@
 #include "task_runner.h"
 
+#include "application.h"
 #include "task.h"
 #include "task_queue.h"
 
+#include <errno.h>
 #include <stdlib.h>
 
 #include <pthread.h>
-
 
 struct TaskRunner
 {
@@ -50,28 +51,41 @@ void TaskRunner_Delete(TaskRunner* self)
 		LOG_ERROR(self->log, "Failed to stop TaskRunner: thread join failed.");
 	}
 
+	LOG_DEBUG(self->log, "Task runner shut down.");
+
 	free(self);
 }
-
 
 static void* TaskRunner_Run(void* arg)
 {
 	TaskRunner* self = (TaskRunner*) arg;
 
-	// TODO: Figure out a stop condition. Maybe an atomic bool?
-	while(true)
+	while (!Application_ShouldShutdown())
 	{
 		Task* task = TaskQueue_Pop(self->tasks);
-		if (task == NULL)
+		if (task == NULL && errno == EAGAIN)
+		{
+			continue;
+		}
+		else if (task == NULL)
 		{
 			LOG_ERROR(self->log, "Failed to get task from queue!");
 			return NULL;
 		}
 
-		Task_Run(task);
+		TaskStatus status;
+		do
+		{
+			status = Task_Run(task);
+		}
+		while (status == TaskStatus_Yield && !Application_ShouldShutdown());
 
 		Task_Delete(task);
 	}
+
+	errno = 0;
+
+	LOG_INFO(self->log, "Task runner shutting down.");
 
 	return NULL;
 }

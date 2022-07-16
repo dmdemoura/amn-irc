@@ -5,10 +5,12 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
+
 
 typedef struct IrcCmdQueue IrcCmdQueue;
 
-IrcCmdQueue* IrcCmdQueue_New(size_t capacity);
+IrcCmdQueue* IrcCmdQueue_New(size_t capacity, int32_t shutdownTimeout);
 void IrcCmdQueue_Delete(IrcCmdQueue* self);
 
 bool IrcCmdQueue_Push(IrcCmdQueue* self, IrcCmd* ircCmd);

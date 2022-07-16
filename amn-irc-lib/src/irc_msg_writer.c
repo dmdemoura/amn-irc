@@ -1,5 +1,6 @@
 #include "irc_msg_writer.h"
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -42,8 +43,13 @@ bool IrcMsgWriter_Write(IrcMsgWriter* self, const char* msg)
 
 		ssize_t bytesWritten = send(self->socket, sendStart, sendLen, 0); 
 
-		if (bytesWritten < 0) {
-			LOG_ERROR(self->log, "Failure while writing message to socket");
+		if (bytesWritten < 0)
+		{
+			if (errno != EAGAIN && errno != EWOULDBLOCK)
+			{
+				LOG_ERROR(self->log, "Failure while writing message to socket");
+			}
+
 			return false;
 		}
 

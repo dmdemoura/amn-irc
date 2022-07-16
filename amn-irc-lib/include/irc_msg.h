@@ -3,8 +3,9 @@
 
 #include "irc_cmd_type.h"
 
-#include <stddef.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #define IRC_MSG_SIZE 512
 
@@ -38,7 +39,7 @@ typedef struct IrcMsg
 	// Command type, either this or reply number must be present.
 	IrcCmdType cmd;
 	// Reply number, either this or command must be present.
-	int replyNumber;
+	uint32_t replyNumber;
 	// Command parameters, may be empty check paramCount.
 	char* params[IRC_MSG_MAX_PARAMS];
 	// Parameter count. If greater than zero, params cannot be null.

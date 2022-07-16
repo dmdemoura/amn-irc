@@ -8,6 +8,10 @@ add_library(${PROJECT_NAME}
 	"src/str_utils.c"
 	"include/array_list.h"
 	"src/array_list.c"
+	"include/application.h"
+	"src/application.c"
+	"include/queue.h"
+	"src/queue.c"
 
 	"include/irc_msg.h"
 	"src/irc_msg.c"

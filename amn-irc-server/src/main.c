@@ -1,3 +1,4 @@
+#include "application.h"
 #include "log.h"
 #include "irc_msg.h"
 #include "irc_msg_parser.h"
@@ -8,10 +9,13 @@
 #include "irc_cmd_executor_task.h"
 
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
@@ -21,6 +25,7 @@
 
 const int PROTOCOL_IP = 0;
 const char* SERVER_PORT = "6667";
+const int32_t TIMEOUT = 10;
 
 struct addrinfo* getServerAddress(const Logger* log)
 {
@@ -56,6 +61,15 @@ int setupSocket(const Logger* log, struct addrinfo* address)
 	if (listenSocket == -1)
 	{
 		LOG_ERROR(log, "Failed to create socket");
+		return -1;
+	}
+
+	struct timeval timeout = { .tv_sec = TIMEOUT };
+
+	if (setsockopt(listenSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(struct timeval))
+			== -1)
+	{
+		LOG_ERROR(log, "Failed to set socket receive timeout");
 		return -1;
 	}
 
@@ -108,6 +122,52 @@ bool StartServer(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds)
 	return true;
 }
 
+void signalHandler(int signum)
+{
+	switch (signum)
+	{
+		case SIGINT:
+		case SIGTERM:
+		case SIGQUIT:
+			Application_StartShutdown();
+		break;
+	}
+}
+
+bool setupSignals(const Logger* log) {
+
+	struct sigaction act =
+	{
+		.sa_handler = signalHandler 
+	};
+
+	if (sigemptyset(&act.sa_mask) != 0)
+	{
+		LOG_ERROR(log, "Failed to set empty signal mask!");
+		return false;
+	}
+
+	if (sigaction(SIGINT, &act, NULL) != 0)
+	{
+		LOG_ERROR(log, "Failed to register SIGINT handler!");
+		return false;
+	}
+
+	if (sigaction(SIGTERM, &act, NULL) != 0)
+	{
+		LOG_ERROR(log, "Failed to register SIGTERM signal handler!");
+		return false;
+	}
+
+	if (sigaction(SIGQUIT, &act, NULL) != 0)
+	{
+		LOG_ERROR(log, "Failed to register SIGQUIT handler!");
+		return false;
+	}
+
+	return true;
+}
+
 int main()
 {
 	int returnCode = EXIT_FAILURE;
@@ -118,11 +178,14 @@ int main()
 
 	LOG_INFO(log, "Server starting");
 
-	tasks = TaskQueue_New(256);
+	if (!setupSignals(log))
+		goto cleanup;
+
+	tasks = TaskQueue_New(256, TIMEOUT);
 	if (tasks == NULL)
 		goto cleanup;
 
-	cmds = IrcCmdQueue_New(1024);
+	cmds = IrcCmdQueue_New(1024, TIMEOUT);
 	if (cmds == NULL)
 		goto cleanup;
 
@@ -145,7 +208,7 @@ int main()
 
 	if (!TaskQueue_Push(tasks, cmdExecutorTask)) 
 	{
-		LOG_ERROR(log, "Failed to push accept task to queue.");
+		LOG_ERROR(log, "Failed to push command executor task to queue.");
 		Task_Delete(cmdExecutorTask);
 		goto cleanup;
 	}
