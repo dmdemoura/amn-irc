@@ -6,7 +6,7 @@
 
 struct ArrayList
 {
-	void* elements;
+	uint8_t* elements;
 	size_t currentSize;
 	size_t allocatedSize;
 	size_t expandSize;
@@ -17,7 +17,7 @@ struct ArrayList
 static bool ArrayList_Expand(ArrayList* self)
 {
 	size_t newSize = self->allocatedSize + self->expandSize;
-	void** elements = realloc(self->elements, newSize * sizeof(void*));
+	uint8_t* elements = realloc(self->elements, newSize * sizeof(uint8_t*));
 	if (!elements)
 	{
 		return false;
@@ -76,12 +76,12 @@ void ArrayList_Insert(ArrayList* self, const void* element, size_t index);
 
 void ArrayList_Set(ArrayList* self, const void* element, size_t index)
 {
-	memcpy((char*) self->elements + index * self->elementSize, element, self->elementSize); 
+	memcpy(self->elements + index * self->elementSize, element, self->elementSize); 
 }
 
 void* ArrayList_Get(const ArrayList* self, size_t index)
 {
-   return (char*) self->elements + index * self->elementSize;
+   return self->elements + index * self->elementSize;
 }
 
 void* ArrayList_Find(
@@ -119,20 +119,39 @@ size_t ArrayList_Size(ArrayList* self)
 }
 
 bool ArrayList_Remove(
-		ArrayList* self, bool compare(const void*, const void*), const void* compareData);
-// {
-// 	size_t i = ArrayList_FindIndex(self, compare, compareData);
-// 	if (i == SIZE_MAX)
-// 	{
-// 		return false;
-// 	}
+		ArrayList* self, bool compare(const void*, const void*), const void* compareData)
+{
+	size_t i = ArrayList_FindIndex(self, compare, compareData);
+	if (i == SIZE_MAX)
+	{
+		return false;
+	}
 
-// 	return ArrayList_RemoveIndex(self, i);
-// }
+	return ArrayList_RemoveIndex(self, i);
+}
 
-bool ArrayList_RemoveIndex(ArrayList* self, size_t index);
+bool ArrayList_RemoveIndex(ArrayList* self, size_t index)
+{
+	if (index + 1 > self->currentSize)
+	{
+		return false;
+	}
+
+	self->deleteElement(ArrayList_Get(self, index));
+
+	uint8_t* copyTo = self->elements + index * self->elementSize;
+	uint8_t* copyFrom = self->elements + (index + 1) * self->elementSize;
+	size_t copyLen = self->currentSize - index - 1;
+
+	memmove(copyTo, copyFrom, copyLen);
+
+	self->currentSize--;
+
+	return true;
+}
 
 void ArrayList_Print(ArrayList* self, void printData(void*));
+
 void ArrayList_Delete(ArrayList* self)
 {
 	if (self == NULL)
@@ -145,5 +164,6 @@ void ArrayList_Delete(ArrayList* self)
 		self->deleteElement(ArrayList_Get(self, i));
 	}
 
+	free(self->elements);
 	free(self);
 }

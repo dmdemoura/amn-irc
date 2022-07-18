@@ -2,6 +2,8 @@
 
 #include "queue.h"
 
+#include <stdlib.h>
+
 UserInputQueue* UserInputQueue_New(size_t capacity, int32_t shutdownTimeout)
 {
 	return (UserInputQueue*) Queue_New(capacity, shutdownTimeout, sizeof(char*)); 
@@ -9,7 +11,7 @@ UserInputQueue* UserInputQueue_New(size_t capacity, int32_t shutdownTimeout)
 
 void UserInputQueue_Delete(UserInputQueue* self)
 {
-	Queue_Delete((Queue*) self);
+	Queue_Delete((Queue*) self, free, sizeof(char*));
 }
 
 bool UserInputQueue_Push(UserInputQueue* self, char* line)

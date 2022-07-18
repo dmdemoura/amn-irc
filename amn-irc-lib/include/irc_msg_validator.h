@@ -35,11 +35,14 @@ bool IrcMsgValidator_ValidateMiddleParam(const IrcMsgValidator* self,
 bool IrcMsgValidator_ValidateTrailingParam(const IrcMsgValidator* self,
 		const char* param, const char* paramEnd);
 
-bool IrcMsgValidator_ValidateChannel(const IrcMsgValidator* self, const char* channel);
+bool IrcMsgValidator_ValidateChannel(
+		const IrcMsgValidator* self, const char* channel, const char* channelEnd);
 
-bool IrcMsgValidator_ValidateMask(const IrcMsgValidator* self, const char* mask);
+bool IrcMsgValidator_ValidateMask(
+		const IrcMsgValidator* self, const char* mask, const char* maskEnd);
 
-bool IrcMsgValidator_ValidateChstring(const IrcMsgValidator* self, const char* chstring);
+bool IrcMsgValidator_ValidateChstring(
+		const IrcMsgValidator* self, const char* chstring, const char* chstringEnd);
 
 
 #endif // AMN_IRC_MSG_VALIDATOR_H

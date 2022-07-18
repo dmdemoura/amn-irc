@@ -15,11 +15,11 @@ typedef struct SendMsgContext
 }
 SendMsgContext;
 
-static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, const IrcMsg* msg);
+static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, IrcMsg* msg);
 static void SendMsgContext_Delete(void* context);
 static TaskStatus SendMessages(void* context);
 
-Task* SendMsgTask_New(const Logger* log, int socket, const IrcMsg* msg)
+Task* SendMsgTask_New(const Logger* log, int socket, IrcMsg* msg)
 {
 	SendMsgContext* ctx = SendMsgContext_New(log, socket, msg);
 	if (ctx == NULL)
@@ -39,7 +39,7 @@ Task* SendMsgTask_New(const Logger* log, int socket, const IrcMsg* msg)
 	return self;
 }
 
-static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, const IrcMsg* msg)
+static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, IrcMsg* msg)
 {
 	SendMsgContext* ctx = malloc(sizeof(SendMsgContext));
 	if (ctx == NULL)
@@ -49,13 +49,7 @@ static SendMsgContext* SendMsgContext_New(const Logger* log, int socket, const I
 	}
 
 	ctx->log = log;
-	ctx->msg = IrcMsg_Clone(msg);
-	if (ctx->msg == NULL)
-	{
-		LOG_ERROR(log, "Failed to clone IrcMsg.");
-		free(ctx);
-		return NULL;
-	}
+	ctx->msg = msg;
 
 	ctx->unparser = IrcMsgUnparser_New(log);
 	if (ctx->unparser == NULL)
@@ -83,7 +77,9 @@ static void SendMsgContext_Delete(void* context)
 {
 	SendMsgContext* ctx = (SendMsgContext*) context;
 
+	IrcMsgUnparser_Delete(ctx->unparser);
 	IrcMsgWriter_Delete(ctx->writer);
+	IrcMsg_Delete(ctx->msg);
 	free(ctx);
 }
 
@@ -92,10 +88,6 @@ static TaskStatus SendMessages(void* context)
 	SendMsgContext* ctx = (SendMsgContext*) context;
 
 	const char* rawMsg = IrcMsgUnparser_Unparse(ctx->unparser, ctx->msg);
-
-	free(ctx->msg);
-	ctx->msg = NULL;
-
 	if (rawMsg == NULL)
 	{
 		LOG_ERROR(ctx->log, "Failure to unparse message");

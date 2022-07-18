@@ -10,7 +10,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-typedef struct IrcCmdExecutorContext
+typedef struct ReceiveMsgContext
 {
 	const Logger* log;
 	TaskQueue* tasks;
@@ -125,10 +125,25 @@ static TaskStatus ReadMessages(void* arg)
 	else if (rawMsg == NULL)
 	{
 		LOG_ERROR(ctx->log, "Failed to read message.");
+
+		IrcCmd* quit = IrcCmd_Clone(&(IrcCmd) {
+			.peerSocket = ctx->socket,
+			.type = IrcCmdType_Quit,
+			.quit = {
+				.quitMessage = "Connection error"
+			}
+		});
+
+		if (!IrcCmdQueue_Push(ctx->cmds, quit))
+		{
+			LOG_ERROR(ctx->log, "Failed to add command to queue");
+			return TaskStatus_Failed;
+		}
+
 		return TaskStatus_Failed;
 	}
 
-	const IrcMsg* msg = IrcMsgParser_Parse(ctx->msgParser, rawMsg);
+	IrcMsg* msg = IrcMsgParser_Parse(ctx->msgParser, rawMsg);
 	if (msg == NULL)
 	{
 		LOG_WARN(ctx->log, "Failed to parse message.");
@@ -158,14 +173,17 @@ static TaskStatus ReadMessages(void* arg)
 			msg->paramCount >= 5 ? msg->params[4] : "[EMPTY]");
 
 	IrcCmd* cmd = IrcCmdParser_Parse(ctx->cmdParser, msg, ctx->socket);
+	IrcMsg_Delete(msg);
 	if (cmd == NULL)
 	{
+		// TODO: Send validation error replies
 		LOG_WARN(ctx->log, "Failed to parse command.");
 		return TaskStatus_Yield;
 	}
 
 	if (!IrcCmdQueue_Push(ctx->cmds, cmd))
 	{
+		IrcCmd_Delete(cmd);
 		LOG_ERROR(ctx->log, "Failed to add command to queue");
 		return TaskStatus_Failed;
 	}

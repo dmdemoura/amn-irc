@@ -3,10 +3,14 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <curses.h>
 
 #define INPUT_WIN_HEIGHT 3
+
+#define MIN_LINES INPUT_WIN_HEIGHT + 4
+#define MIN_COLS 3
 
 /**
  * Limits how many lines we pull from the queue at max, per update interval.
@@ -26,6 +30,7 @@ struct Tui
 	UserOutputQueue* userOutput;
 };
 
+static bool Tui_InputWinMove(Tui* self, int pos);
 static bool Tui_TryUpdateChat(Tui* self);
 static bool Tui_DisplayChatLine(Tui* self, char* line);
 
@@ -51,7 +56,35 @@ Tui* Tui_Create(const Logger* log, UserInputQueue* userInput, UserOutputQueue* u
 		return NULL;
 	}
 
+	if (LINES < MIN_LINES)
+	{
+		LOG_ERROR(log, "Terminal doesn't have enough lines");
+		Tui_Delete(self);
+		return NULL;
+	}
+
+	if (COLS < MIN_COLS)
+	{
+		LOG_ERROR(log, "Terminal doesn't have enough columns");
+		Tui_Delete(self);
+		return NULL;
+	}
+
 	self->mainWin = win;
+
+	if (box(self->mainWin, 0, 0) == ERR)
+	{
+		LOG_ERROR(log, "Failed to create main window border!");
+		Tui_Delete(self);
+		return NULL;
+	}
+
+	if (mvwhline(self->mainWin, LINES - INPUT_WIN_HEIGHT - 2, 1, 0, COLS - 2))
+	{
+		LOG_ERROR(log, "Failed to create main window separator!");
+		Tui_Delete(self);
+		return NULL;
+	}
 
 	if (noecho() == ERR)
 	{
@@ -60,7 +93,7 @@ Tui* Tui_Create(const Logger* log, UserInputQueue* userInput, UserOutputQueue* u
 		return NULL;
 	}
 
-	self->chatWin = newwin(LINES - INPUT_WIN_HEIGHT, COLS, 0, 0);
+	self->chatWin = newwin(LINES - INPUT_WIN_HEIGHT - 3, COLS - 2, 1, 1);
 	if (self->chatWin == NULL)
 	{
 		LOG_ERROR(log, "Failed to create chat window!");
@@ -68,7 +101,7 @@ Tui* Tui_Create(const Logger* log, UserInputQueue* userInput, UserOutputQueue* u
 		return NULL;
 	}
 
-	self->inputWin = newwin(INPUT_WIN_HEIGHT, COLS, LINES - INPUT_WIN_HEIGHT, 0);
+	self->inputWin = newwin(INPUT_WIN_HEIGHT, COLS - 2, LINES - INPUT_WIN_HEIGHT - 1, 1);
 	if (self->inputWin == NULL)
 	{
 		LOG_ERROR(log, "Failed to create input window!");
@@ -76,21 +109,21 @@ Tui* Tui_Create(const Logger* log, UserInputQueue* userInput, UserOutputQueue* u
 		return NULL;
 	}
 
-	if (keypad(self->inputWin, TRUE) == ERR)
+	if (keypad(self->inputWin, true) == ERR)
 	{
-		LOG_ERROR(log, "Failed to enable ncurses keypad!");
+		LOG_ERROR(log, "Failed to enable input window keypad!");
 		Tui_Delete(self);
 		return NULL;
 	}
+
+	// if (scrollok(self->inputWin, true) == ERR)
+	// {
+	// 	LOG_ERROR(log, "Failed to enable input window scrollok!");
+	// 	Tui_Delete(self);
+	// 	return NULL;
+	// }
 
 	wtimeout(self->inputWin, 100);
-
-	if (box(self->inputWin, 0, 0) == ERR)
-	{
-		LOG_ERROR(log, "Failed to create input window border!");
-		Tui_Delete(self);
-		return NULL;
-	}
 
 	return self;
 }
@@ -122,6 +155,10 @@ void Tui_Delete(Tui* self)
 
 bool Tui_Run(Tui* self)
 {
+	if (wrefresh(self->mainWin) == ERR)
+	{
+		return false;
+	}
 	
 	if (wprintw(self->chatWin, "Hello world!") == ERR)
 	{
@@ -133,16 +170,15 @@ bool Tui_Run(Tui* self)
 		return false;
 	}
 
-	if (wmove(self->inputWin, 1, 1) == ERR)
-	{
-		return false;
-	}
+	char msgBuffer[4097] = {0};
+	int len = 0;
+	int pos = 0;
 
 	while (true)
 	{
 		errno = 0;
 		int input = wgetch(self->inputWin);
-		LOG_DEBUG(self->log, "Got input: %d", input);
+		// LOG_DEBUG(self->log, "Got input: %d", input);
 		if (input == ERR)
 		{
 			if (errno == EINTR)
@@ -155,16 +191,134 @@ bool Tui_Run(Tui* self)
 			continue;
 		}
 
-		switch(input)
+		int cols = getmaxx(self->inputWin);
+		if (cols == ERR)
 		{
-			case KEY_RIGHT:
-				break;
-			case KEY_LEFT:
-				break;
+			LOG_ERROR(self->log, "Failed to get input window max x.");
+			return false;
 		}
 
+		int lines = getmaxy(self->inputWin);
+		if (lines == ERR)
+		{
+			LOG_ERROR(self->log, "Failed to get input window max y.");
+			return false;
+		}
 
-		waddch(self->inputWin, (chtype) input);
+		switch(input)
+		{
+			case KEY_LEFT:
+				pos = pos > 0 ? pos - 1 : 0;
+				goto move;
+			case KEY_RIGHT:
+				pos = pos + 1 < len ? pos + 1 : len;
+				goto move;
+			case KEY_UP:
+				pos = pos >= cols ? pos - cols : 0;
+				goto move;
+			case KEY_DOWN:
+				pos = pos + cols < len ? pos + cols : len;
+				goto move;
+			move:
+				if(!Tui_InputWinMove(self, pos))
+				{
+					return false;
+				}
+				break;
+			case KEY_BACKSPACE:
+				if (len > 0 && pos > 0) 
+				{
+					memmove(msgBuffer + pos - 1, msgBuffer + pos, (size_t) (len - pos));
+					msgBuffer[len - 1] = '\0';
+					pos--;
+					len--;
+				}
+				break;
+			case KEY_DC:
+				if (len > 0 && pos < len) 
+				{
+					memmove(msgBuffer + pos, msgBuffer + pos + 1, (size_t) (len - pos - 1));
+					msgBuffer[len - 1] = '\0';
+					len--;
+				}
+				break;
+			case '\r':
+			case '\n':
+				msgBuffer[0] = '\0';
+				pos = 0;
+				len = 0;
+				break;
+			case '\0':
+				continue;
+			default:
+				if (input & KEY_CODE_YES || pos >= 4096 || len >= 4096)
+				{
+					continue;
+				}
+				else if (pos < len) 
+				{
+					memmove(msgBuffer + pos + 1, msgBuffer + pos, (size_t) (len - pos));
+				}
+				msgBuffer[pos] = (char) input;
+				msgBuffer[len + 1] = '\0';
+				pos++;
+				len++;
+		}
+		
+		LOG_DEBUG(self->log, "Pos: %d | Len: %d\nMsg Buffer: %s", pos, len, msgBuffer);
+
+		if (wclear(self->inputWin) == ERR)
+		{
+			LOG_ERROR(self->log, "Failed to clear input window!");
+			return false;
+		}
+
+		int max_chars = lines * cols - 1;
+		int offset = pos / max_chars * max_chars;
+		LOG_DEBUG(self->log, "Max chars: %d | Pos: %d | Offset: %d", max_chars, pos, offset);
+
+		if (mvwaddnstr(self->inputWin, 0, 0, msgBuffer + offset, max_chars) == ERR)
+		{
+			LOG_ERROR(self->log, "Failed to write input text!");
+			return false;
+		}
+
+		if(!Tui_InputWinMove(self, pos))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+static bool Tui_InputWinMove(Tui* self, int pos)
+{
+	int cols = getmaxx(self->inputWin);
+	if (cols == ERR)
+	{
+		LOG_ERROR(self->log, "Failed to get input window max x.");
+		return false;
+	}
+
+	int lines = getmaxy(self->inputWin);
+	if (lines == ERR)
+	{
+		LOG_ERROR(self->log, "Failed to get input window max y.");
+		return false;
+	}
+
+	int max_chars = lines * cols - 1;
+	int offset = pos / max_chars * max_chars;
+	int wpos = pos - offset;
+
+	int y = wpos / cols;
+	int x = wpos % cols;
+
+	if (wmove(self->inputWin, y, x) == ERR)
+	{
+		LOG_ERROR(self->log, "Failed to move input window cursor");
+		return false;
 	}
 
 	return true;

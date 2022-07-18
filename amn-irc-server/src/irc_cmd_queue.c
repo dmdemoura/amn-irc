@@ -8,9 +8,14 @@ IrcCmdQueue* IrcCmdQueue_New(size_t capacity, int32_t shutdownTimeout)
 	return (IrcCmdQueue*) Queue_New(capacity, shutdownTimeout, sizeof(IrcCmd*)); 
 }
 
+static void ElementDeleter(void* element)
+{
+	IrcCmd_Delete((IrcCmd*) element);
+}
+
 void IrcCmdQueue_Delete(IrcCmdQueue* self)
 {
-	Queue_Delete((Queue*) self);
+	Queue_Delete((Queue*) self, ElementDeleter, sizeof(IrcCmd*));
 }
 
 bool IrcCmdQueue_Push(IrcCmdQueue* self, IrcCmd* ircCmd)

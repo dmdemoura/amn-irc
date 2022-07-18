@@ -18,6 +18,8 @@ struct Queue
 	pthread_cond_t notFull;
 };
 
+static bool Queue_IsEmpty(const Queue* self);
+
 Queue* Queue_New(size_t capacity, int32_t shutdownTimeout, size_t elementSize)
 {
 	Queue* self = malloc(sizeof(Queue));
@@ -55,11 +57,22 @@ error_ircMsgs:
 	return NULL;
 }
 
-void Queue_Delete(Queue* self)
+void Queue_Delete(Queue* self, void (*elementDeleter)(void*), size_t elementSize)
 {
 	pthread_cond_destroy(&self->notFull);
 	pthread_cond_destroy(&self->notEmpty);
 	pthread_mutex_destroy(&self->mutex);
+
+	if (!Queue_IsEmpty(self))
+	{
+		for (size_t i = self->front; i <= self->rear; i = (i + 1) % self->capacity)
+		{
+			void* element;
+			memcpy(&element, self->elements + i * elementSize, elementSize);
+
+			elementDeleter(element);
+		}
+	}
 
 	free(self->elements);
 	free(self);

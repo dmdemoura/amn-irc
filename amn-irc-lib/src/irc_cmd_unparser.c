@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 struct IrcCmdUnparser
 {
@@ -154,17 +155,55 @@ static bool UnparseUser(IrcCmdUnparser* self, IrcMsg* msg, const IrcCmd* cmd)
 
 static bool UnparsePrivMsg(IrcCmdUnparser* self, IrcMsg* msg, const IrcCmd* cmd)
 {
+	size_t receiverLen = 0;
 	for (size_t i = 0; i < cmd->privMsg.receiverCount; i++)
 	{
-		msg->params[i] = StrUtils_Clone(cmd->privMsg.receiver[i]);
-		if (msg->params[i] == NULL)
+		if (cmd->privMsg.receiver->value == NULL)
 		{
-			LOG_ERROR(self->log, "Failed to clone receiver[%zu]", i);
 			return false;
 		}
-		msg->paramCount++;
+
+		if (cmd->privMsg.receiver->type != IrcReceiverType_Nickname)
+		{
+			receiverLen++;
+		}
+		
+		receiverLen += strlen(cmd->privMsg.receiver->value) + 1;
 	}
 
+	msg->params[0] = malloc(sizeof(char) * receiverLen);
+	if (msg->params[0] == NULL)
+	{
+		return false;
+	}
+	msg->paramCount++;
+	
+	for (size_t i = 0, pos = 0; i < cmd->privMsg.receiverCount && pos < receiverLen - 1; i++)
+	{
+		switch (cmd->privMsg.receiver[i].type)
+		{
+			case IrcReceiverType_Nickname:
+				break;
+			case IrcReceiverType_LocalChannel:
+				msg->params[0][pos] = '&';
+				pos++;
+				break;
+			case IrcReceiverType_DistChannelOrHostMask:
+				msg->params[0][pos] = '#';
+				pos++;
+				break;
+			case IrcReceiverType_ServerMask:
+				msg->params[0][pos] = '$';
+				pos++;
+				break;
+		}
+
+		size_t len = strlen(cmd->privMsg.receiver->value);
+		memcpy(msg->params[0] + pos, cmd->privMsg.receiver->value, len);
+		pos += len;
+	}
+	msg->params[0][receiverLen - 1] = '\0';
+	
 	msg->params[msg->paramCount] = StrUtils_Clone(cmd->privMsg.text);
 	if (msg->params[msg->paramCount] == NULL)
 	{

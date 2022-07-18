@@ -1,5 +1,7 @@
 #include "user_output_queue.h"
 
+#include <stdlib.h>
+
 
 UserOutputQueue* UserOutputQueue_New(size_t capacity, int32_t shutdownTimeout)
 {
@@ -8,7 +10,7 @@ UserOutputQueue* UserOutputQueue_New(size_t capacity, int32_t shutdownTimeout)
 
 void UserOutputQueue_Delete(UserOutputQueue* self)
 {
-	Queue_Delete((Queue*) self);
+	Queue_Delete((Queue*) self, free, sizeof(char*));
 }
 
 bool UserOutputQueue_Push(UserOutputQueue* self, char* line)

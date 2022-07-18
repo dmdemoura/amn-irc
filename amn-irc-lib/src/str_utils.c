@@ -6,20 +6,41 @@
 
 char* StrUtils_Clone(const char* str)
 {
-	if (str == NULL)
+	return StrUtils_CloneRange(str, NULL);
+}
+
+char* StrUtils_CloneRange(const char* start, const char* end)
+{
+	if (start == NULL)
 	{
 		return NULL;
 	}
 
-	size_t len = strlen(str) + 1;
-	
-	char* clone = malloc(sizeof(char) * len);
+	size_t len;
+	if (end != NULL)
+	{
+		ptrdiff_t diff = end - start;
+
+		if (diff < 0)
+		{
+			return false;
+		}
+
+		len = (size_t) diff; 
+	}
+	else
+	{
+		len = strlen(start);
+	}
+
+	char* clone = malloc(sizeof(char) * (len + 1));
 	if (clone == NULL)
 	{
 		return NULL;
 	}
 
-	memcpy(clone, str, sizeof(char) * len);
+	memcpy(clone, start, len);
+	clone[len] = '\0';
 
 	return clone;
 }
@@ -60,4 +81,20 @@ bool StrUtils_ReadSizeT(const char* str, size_t* value)
 	}
 
 	return true;
+}
+
+const char* StrUtils_FindFirst(const char* string, const char* charsToFind)
+{
+	for (; *string != '\0'; string += 1)
+	{
+		for(const char* c = charsToFind; *c != '\0'; c += 1)
+		{
+			if (*string == *c)
+			{
+				return string;
+			}
+		}
+	}
+
+	return NULL;
 }

@@ -4,6 +4,7 @@
 #include "str_utils.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 struct IrcCmdParser
 {
@@ -13,6 +14,7 @@ struct IrcCmdParser
 
 static bool ParseNick(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg);
 static bool ParseUser(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg);
+static bool ParseQuit(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg);
 static bool ParsePrivMsg(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg);
 
 IrcCmdParser* IrcCmdParser_New(const Logger* log, const IrcMsgValidator* validator)
@@ -44,6 +46,8 @@ IrcCmd* IrcCmdParser_Parse(IrcCmdParser* self, const IrcMsg* msg, const int peer
 		return NULL;
 	}
 
+	*cmd = (IrcCmd) { 0 };
+
 	cmd->type = msg->cmd;
 	cmd->peerSocket = peerSocket;
 
@@ -62,6 +66,9 @@ IrcCmd* IrcCmdParser_Parse(IrcCmdParser* self, const IrcMsg* msg, const int peer
 		break;
 	case IrcCmdType_User:
 		success = ParseUser(self, cmd, msg);
+		break;
+	case IrcCmdType_Quit:
+		success = ParseQuit(self, cmd, msg);
 		break;
 	case IrcCmdType_PrivMsg:
 		success = ParsePrivMsg(self, cmd, msg);
@@ -179,35 +186,113 @@ static bool ParseUser(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg)
 	return true;
 }
 
+static bool ParseQuit(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg)
+{
+	// Initialize everything to defaults in case we need to call Delete.
+	cmd->quit = (IrcCmdQuit) {0};
+
+	if (msg->paramCount > 1)
+	{
+		LOG_WARN(self->log,
+				"Got QUIT cmd with unexpected parameter count: %zu. Expected: 0 or 1",
+				msg->paramCount);
+	}
+
+	if (msg->paramCount == 1)
+	{
+		cmd->quit.quitMessage = StrUtils_Clone(msg->params[0]);
+		if (cmd->quit.quitMessage == NULL)
+		{
+			LOG_ERROR(self->log, "Failed to clone quit message.");
+			return false;
+		}
+	}
+
+	return true;
+}
+
 static bool ParsePrivMsg(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg)
 {
 	// Initialize everything to defaults in case we need to call Delete.
 	cmd->privMsg = (IrcCmdPrivMsg) {0};
 
-	if (msg->paramCount < 2)
+	if (msg->paramCount != 2)
 	{
-		LOG_WARN(self->log, "Got PRIVMSG cmd with less than 2 parameters: %zu.",
+		LOG_WARN(self->log, "Got PRIVMSG cmd with %zu parameters. Expected: 2",
 				msg->paramCount);
 		return false;
 	}
-
-	for (size_t i = 0; i < msg->paramCount - 1; i++)
+		
+	size_t receiverCount = 1;
+	for (char* c = msg->params[0]; *c != '\0'; c++)
 	{
-		if(!IrcMsgValidator_ValidateMask(self->validator, msg->params[i]))
+		if (*c == ',')
 		{
-			LOG_WARN(self->log, "Got PRIVMSG cmd with invalid mask[%zu]: %s.",
-					i, msg->params[i]);
-			return false;	
+			receiverCount++;
+		}
+	}
+
+	cmd->privMsg.receiver = malloc(sizeof(IrcReceiver) * receiverCount);
+	if (cmd->privMsg.receiver == NULL)
+	{
+		return false;
+	}
+
+	const char* receiver = msg->params[0];
+	for (size_t i = 0; true; i++)
+	{
+		const char* receiverEnd = strchr(receiver, ',');
+		receiverEnd = receiverEnd == NULL ? strchr(receiver, '\0') : receiverEnd;
+
+		switch(*receiver)
+		{
+			case '&':
+				cmd->privMsg.receiver[i].type = IrcReceiverType_LocalChannel;
+				goto chstring;
+			case '#':
+				cmd->privMsg.receiver[i].type = IrcReceiverType_DistChannelOrHostMask;
+				goto chstring;
+			case '$':
+				cmd->privMsg.receiver[i].type = IrcReceiverType_ServerMask;
+				goto chstring;
+			chstring:
+				receiver++;
+
+				if(!IrcMsgValidator_ValidateChstring(
+							self->validator, receiver, receiverEnd))
+				{
+					LOG_WARN(self->log, "Got PRIVMSG cmd with invalid receiver[%zu]: %s.",
+								i, receiver);
+						return false;	
+				}
+				break;
+			default:
+				cmd->privMsg.receiver[i].type = IrcReceiverType_Nickname;
+
+				if(!IrcMsgValidator_ValidateNick(self->validator, receiver, receiverEnd))
+				{
+					LOG_WARN(self->log, "Got PRIVMSG cmd with invalid receiver[%zu]: %s.",
+								i, receiver);
+						return false;	
+				}
 		}
 
-		cmd->privMsg.receiver[i] = StrUtils_Clone(msg->params[i]);
-		if (cmd->privMsg.receiver[i] == NULL)
+		cmd->privMsg.receiver[i].value = StrUtils_CloneRange(receiver, receiverEnd);
+		if (cmd->privMsg.receiver[i].value == NULL)
 		{
 			LOG_ERROR(self->log, "Failed to clone receiver[%zu] string", i);
 			return false;
 		}
 
-		cmd->privMsg.receiverCount = i; 
+		cmd->privMsg.receiverCount++; 
+		if (*receiverEnd != '\0')
+		{
+			receiver = receiverEnd + 1;
+		}
+		else
+		{
+			break;
+		}
 	}
 
 	cmd->privMsg.text = StrUtils_Clone(msg->params[msg->paramCount - 1]);

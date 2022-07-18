@@ -16,7 +16,7 @@ typedef enum Queue_TryPopResult
 Queue_TryPopResult;
 
 Queue* Queue_New(size_t capacity, int32_t shutdownTimeout, size_t elementSize);
-void Queue_Delete(Queue* self);
+void Queue_Delete(Queue* self, void (*elementDeleter)(void*), size_t elementSize);
 
 bool Queue_Push(Queue* self, void* element, size_t elementSize);
 bool Queue_Pop(Queue* self, void* outElement, size_t elementSize);

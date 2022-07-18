@@ -26,7 +26,7 @@ bool IrcMsgPrefix_Clone(const IrcMsgPrefix* self, IrcMsgPrefix* clone)
 
 	if (self->username != NULL)
 	{
-		clone->username = StrUtils_Clone(self->origin);
+		clone->username = StrUtils_Clone(self->username);
 		if (clone->username == NULL)
 		{
 			return false;	

@@ -8,7 +8,8 @@
 /**
   * Task that executes the commands on the received IrcCmds.
   */
-Task* IrcCmdExecutorTask_New(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds);
+Task* IrcCmdExecutorTask_New(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds,
+		const char* servername);
 
 
 #endif // AMN_IRC_CMD_EXECUTOR_TASK_H

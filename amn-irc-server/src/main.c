@@ -22,10 +22,10 @@
 #include <unistd.h>
 
 #define RUNNER_COUNT 10
-
-const int PROTOCOL_IP = 0;
-const char* SERVER_PORT = "6667";
-const int32_t TIMEOUT = 10;
+#define SERVER_NAME "amn-irc.server.local"
+#define PROTOCOL_IP 0
+#define SERVER_PORT "6667"
+#define TIMEOUT 10
 
 struct addrinfo* getServerAddress(const Logger* log)
 {
@@ -199,7 +199,7 @@ int main()
 		}
 	}
 
-	Task* cmdExecutorTask = IrcCmdExecutorTask_New(log, tasks, cmds);
+	Task* cmdExecutorTask = IrcCmdExecutorTask_New(log, tasks, cmds, SERVER_NAME);
 	if (cmdExecutorTask == NULL)
 	{
 		LOG_ERROR(log, "Failed to create command executor task.");
@@ -220,6 +220,12 @@ int main()
 	returnCode = EXIT_SUCCESS;
 
 cleanup:
+
+	if (returnCode == EXIT_FAILURE)
+	{
+		LOG_ERROR(log, "Failed to start server. Shutting down!");
+		Application_StartShutdown();
+	}
 
 	for (size_t i = 0; i < RUNNER_COUNT; i++)
 	{

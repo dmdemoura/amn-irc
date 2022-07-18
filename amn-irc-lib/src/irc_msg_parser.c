@@ -1,6 +1,7 @@
 #include "irc_msg_parser.h"
 
 #include "irc_cmd_map.h"
+#include "str_utils.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -36,50 +37,10 @@ void IrcMsgParser_Delete(IrcMsgParser* self)
 	free(self);
 }
 
-/**
-  * Allocates a buffer and copies an array range into it.
-  */
-static void* AllocAndCopy(const void* start, const void* end)
-{
-	ptrdiff_t diff = (const uint8_t*) end - (const uint8_t*) start;
-	if (diff == 0) 
-	{
-		return NULL;
-	}
-
-	size_t size = (size_t) diff; 
-	char* copy = malloc(size + 1);
-	if (copy == NULL)
-	{
-		return NULL;
-	}
-
-	memcpy(copy, start, size);
-	copy[size] = '\0';
-
-	return copy;
-}
-
-static const char* FindFirst(const char* string, const char* charsToFind)
-{
-	for (; *string != '\0'; string += 1)
-	{
-		for(const char* c = charsToFind; *c != '\0'; c += 1)
-		{
-			if (*string == *c)
-			{
-				return string;
-			}
-		}
-	}
-
-	return NULL;
-}
-
 static bool IrcMsgParser_ParsePrefixOrigin(IrcMsgParser* self)
 {
 	const char* originStart = self->rawMsg;
-	const char* originEnd = FindFirst(originStart, "!@ ");
+	const char* originEnd = StrUtils_FindFirst(originStart, "!@ ");
 
 	// Advance buffer
 	self->rawMsg = originEnd;
@@ -97,7 +58,7 @@ static bool IrcMsgParser_ParsePrefixOrigin(IrcMsgParser* self)
 		return false;
 	}
 
-	self->msg->prefix.origin = AllocAndCopy(originStart, originEnd);
+	self->msg->prefix.origin = StrUtils_CloneRange(originStart, originEnd);
 	if (self->msg->prefix.origin == NULL)
 	{
 		LOG_ERROR(self->log, "Failed to copy IrcMsgPrefix.origin");
@@ -116,7 +77,7 @@ static bool IrcMsgParser_ParsePrefixUsername(IrcMsgParser* self)
 	}
 
 	const char* usernameStart = self->rawMsg + 1;
-	const char* usernameEnd = FindFirst(usernameStart, "@ ");
+	const char* usernameEnd = StrUtils_FindFirst(usernameStart, "@ ");
 
 	// Advance buffer
 	self->rawMsg = usernameEnd;
@@ -134,7 +95,7 @@ static bool IrcMsgParser_ParsePrefixUsername(IrcMsgParser* self)
 		return false;
 	}
 
-	self->msg->prefix.username = AllocAndCopy(usernameStart, usernameEnd);
+	self->msg->prefix.username = StrUtils_CloneRange(usernameStart, usernameEnd);
 	if (self->msg->prefix.username == NULL)
 	{
 		LOG_ERROR(self->log, "Failed to copy IrcMsgPrefix.username");
@@ -171,7 +132,7 @@ static bool IrcMsgParser_ParsePrefixHostname(IrcMsgParser* self)
 		return false;
 	}
 
-	self->msg->prefix.hostname = AllocAndCopy(hostnameStart, hostnameEnd);
+	self->msg->prefix.hostname = StrUtils_CloneRange(hostnameStart, hostnameEnd);
 	if (self->msg->prefix.hostname == NULL)
 	{
 		LOG_ERROR(self->log, "Failed to copy IrcMsgPrefix.hostname");
@@ -243,7 +204,7 @@ static bool IrcMsgParser_ParseCommand(IrcMsgParser* self)
 static bool IrcMsgParser_ParseMiddleParam(IrcMsgParser* self)
 {
 	const char* paramStart = self->rawMsg;
-	const char* paramEnd = FindFirst(paramStart, " \r");
+	const char* paramEnd = StrUtils_FindFirst(paramStart, " \r");
 
 	self->rawMsg = paramEnd;
 
@@ -252,7 +213,7 @@ static bool IrcMsgParser_ParseMiddleParam(IrcMsgParser* self)
 		return false;
 	}
 
-	char* param = AllocAndCopy(paramStart, paramEnd);
+	char* param = StrUtils_CloneRange(paramStart, paramEnd);
 	if (param == NULL)
 	{
 		LOG_ERROR(self->log, "Failed to allocate parameter.");
@@ -277,7 +238,7 @@ static bool IrcMsgParser_ParseTrailingParam(IrcMsgParser* self)
 		return false;
 	}
 
-	char* param = AllocAndCopy(paramStart, paramEnd);
+	char* param = StrUtils_CloneRange(paramStart, paramEnd);
 	if (param == NULL)
 	{
 		LOG_ERROR(self->log, "Failed to allocate parameter.");
