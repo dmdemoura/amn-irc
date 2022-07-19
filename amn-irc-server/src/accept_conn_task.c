@@ -59,10 +59,10 @@ static TaskStatus WaitForConnections(void* arg)
 {
 	AcceptConnContext* ctx = (AcceptConnContext*) arg;
 
-	LOG_DEBUG(ctx->log, "Waiting for connection");
+	// LOG_DEBUG(ctx->log, "Waiting for connection");
 
 	int clientSocket = accept(ctx->socket, NULL, NULL);
-	if (clientSocket == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+	if (clientSocket == -1 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR))
 	{
 		// Socket timeout
 		// LOG_DEBUG(ctx->log, "Timeout while accepting connections.");

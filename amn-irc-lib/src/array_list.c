@@ -119,7 +119,8 @@ size_t ArrayList_Size(ArrayList* self)
 }
 
 bool ArrayList_Remove(
-		ArrayList* self, bool compare(const void*, const void*), const void* compareData)
+		ArrayList* self, bool compare(const void*, const void*), const void* compareData,
+		bool delete)
 {
 	size_t i = ArrayList_FindIndex(self, compare, compareData);
 	if (i == SIZE_MAX)
@@ -127,17 +128,20 @@ bool ArrayList_Remove(
 		return false;
 	}
 
-	return ArrayList_RemoveIndex(self, i);
+	return ArrayList_RemoveIndex(self, i, delete);
 }
 
-bool ArrayList_RemoveIndex(ArrayList* self, size_t index)
+bool ArrayList_RemoveIndex(ArrayList* self, size_t index, bool delete)
 {
 	if (index + 1 > self->currentSize)
 	{
 		return false;
 	}
 
-	self->deleteElement(ArrayList_Get(self, index));
+	if (self->deleteElement != NULL && delete)
+	{
+		self->deleteElement(ArrayList_Get(self, index));
+	}
 
 	uint8_t* copyTo = self->elements + index * self->elementSize;
 	uint8_t* copyFrom = self->elements + (index + 1) * self->elementSize;
@@ -152,6 +156,19 @@ bool ArrayList_RemoveIndex(ArrayList* self, size_t index)
 
 void ArrayList_Print(ArrayList* self, void printData(void*));
 
+void ArrayList_Clear(ArrayList* self)
+{
+	if (self->deleteElement)
+	{
+		for (size_t i = 0; i < self->currentSize; i++)
+		{
+			self->deleteElement(ArrayList_Get(self, i));
+		}
+	}
+
+	self->currentSize = 0;
+}
+
 void ArrayList_Delete(ArrayList* self)
 {
 	if (self == NULL)
@@ -159,9 +176,12 @@ void ArrayList_Delete(ArrayList* self)
 		return;
 	}
 
-	for (size_t i = 0; i < self->currentSize; i++)
+	if (self->deleteElement)
 	{
-		self->deleteElement(ArrayList_Get(self, i));
+		for (size_t i = 0; i < self->currentSize; i++)
+		{
+			self->deleteElement(ArrayList_Get(self, i));
+		}
 	}
 
 	free(self->elements);

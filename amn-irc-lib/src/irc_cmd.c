@@ -6,11 +6,13 @@
 
 static bool IrcCmd_CloneNick(const IrcCmd* self, IrcCmd* clone);
 static bool IrcCmd_CloneUser(const IrcCmd* self, IrcCmd* clone);
+static bool IrcCmd_CloneJoin(const IrcCmd* self, IrcCmd* clone);
 static bool IrcCmd_CloneQuit(const IrcCmd* self, IrcCmd* clone);
 static bool IrcCmd_ClonePrivMsg(const IrcCmd* self, IrcCmd* clone);
 
 static void IrcCmd_DeleteNick(IrcCmd* self);
 static void IrcCmd_DeleteUser(IrcCmd* self);
+static void IrcCmd_DeleteJoin(IrcCmd* self);
 static void IrcCmd_DeleteQuit(IrcCmd* self);
 static void IrcCmd_DeletePrivMsg(IrcCmd* self);
 
@@ -45,11 +47,14 @@ IrcCmd* IrcCmd_Clone(const IrcCmd* self)
 		case IrcCmdType_Quit:
 			success = IrcCmd_CloneQuit(self, clone);
 			break;
+		case IrcCmdType_Join:
+			success = IrcCmd_CloneJoin(self, clone);
+			break;
 		case IrcCmdType_PrivMsg:
 			success = IrcCmd_ClonePrivMsg(self, clone);
 			break;
 		default:
-			break;
+			return NULL;
 	}
 
 	if (!success)
@@ -98,6 +103,34 @@ static bool IrcCmd_CloneUser(const IrcCmd* self, IrcCmd* clone)
 	if (clone->user.realname == NULL)
 	{
 		return false;
+	}
+
+	return true;
+}
+
+static bool IrcCmd_CloneJoin(const IrcCmd* self, IrcCmd* clone)
+{
+	clone->join.channels = malloc(sizeof(IrcReceiver) * self->join.channelCount);
+	if (clone->join.channels == NULL)
+	{
+		return false;
+	}
+
+	for (size_t i = 0; i < self->join.channelCount; i++)
+	{
+		clone->join.channels[i].name = StrUtils_Clone(self->join.channels[i].name);
+		if (clone->join.channels[i].name == NULL)
+		{
+			return false;
+		}
+
+		clone->join.channels[i].key = StrUtils_Clone(self->join.channels[i].key);
+		if (clone->join.channels[i].key == NULL)
+		{
+			return false;
+		}
+
+		clone->join.channelCount++;
 	}
 
 	return true;
@@ -157,6 +190,9 @@ void IrcCmd_Delete(IrcCmd* self)
 		case IrcCmdType_User:
 			IrcCmd_DeleteUser(self);
 			break;
+		case IrcCmdType_Join:
+			IrcCmd_DeleteJoin(self);
+			break;
 		case IrcCmdType_Quit:
 			IrcCmd_DeleteQuit(self);
 			break;
@@ -184,6 +220,17 @@ static void IrcCmd_DeleteUser(IrcCmd* self)
 	free(self->user.hostname);
 	free(self->user.servername);
 	free(self->user.realname);
+}
+
+static void IrcCmd_DeleteJoin(IrcCmd* self)
+{
+	for (size_t i = 0; i < self->join.channelCount; i++)
+	{
+		free(self->join.channels[i].name);
+		free(self->join.channels[i].key);
+	}
+
+	free(self->join.channels);
 }
 
 static void IrcCmd_DeleteQuit(IrcCmd* self)

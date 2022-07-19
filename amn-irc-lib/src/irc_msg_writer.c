@@ -45,7 +45,7 @@ bool IrcMsgWriter_Write(IrcMsgWriter* self, const char* msg)
 
 		if (bytesWritten < 0)
 		{
-			if (errno != EAGAIN && errno != EWOULDBLOCK)
+			if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
 			{
 				LOG_ERROR(self->log, "Failure while writing message to socket");
 			}

@@ -116,7 +116,7 @@ static TaskStatus ReadMessages(void* arg)
 
 	errno = 0;
 	const char* rawMsg = IrcMsgReader_Read(ctx->reader);
-	if (rawMsg == NULL && (errno == EAGAIN || errno == EWOULDBLOCK))
+	if (rawMsg == NULL && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR))
 	{
 		// Socket timeout
 		// LOG_DEBUG(ctx->log, "Timeout while reading message.");

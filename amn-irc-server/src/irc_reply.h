@@ -1,7 +1,21 @@
 #ifndef AMN_IRC_REPLY_H
 #define AMN_IRC_REPLY_H
 
+#include "irc_cmd.h"
 #include "irc_msg.h"
+
+/*
+ * 332	 RPL_TOPIC
+ * 				"<channel> :<topic>"
+
+ * 		- When sending a TOPIC message to determine the
+ * 		  channel topic, one of two replies is sent.  If
+ * 		  the topic is set, RPL_TOPIC is sent back else
+ * 		  RPL_NOTOPIC.
+ */
+IrcMsg* IrcReply_RplTopic(
+		const char* servername, IrcChannelType channelType, const char* channel,
+		const char* topic);
 
 /*
  * 401	 ERR_NOSUCHNICK
@@ -51,5 +65,33 @@ IrcMsg* IrcReply_ErrNeedMoreParams(const char* servername, IrcCmdType cmd);
  * 		  password or user details from second USER message).
  */
 IrcMsg* IrcReply_ErrAlreadyRegistered(const char* servername);
+
+/*
+ * 471	 ERR_CHANNELISFULL
+ * 				"<channel> :Cannot join channel (+l)"
+ */
+IrcMsg* IrcReply_ErrChannelIsFull(
+		const char* servername, IrcChannelType channelType, const char* channelName);
+
+/*
+ * 473	 ERR_INVITEONLYCHAN
+ * 				"<channel> :Cannot join channel (+i)"
+ */
+IrcMsg* IrcReply_ErrInviteOnlyChan(
+		const char* servername, IrcChannelType channelType, const char* channelName);
+
+/*
+ * 474	 ERR_BANNEDFROMCHAN
+ * 				"<channel> :Cannot join channel (+b)"
+ */
+IrcMsg* IrcReply_ErrBannedFromChan(
+		const char* servername, IrcChannelType channelType, const char* channelName);
+
+/*
+ * 475	 ERR_BADCHANNELKEY
+ * 				"<channel> :Cannot join channel (+k)"
+ */
+IrcMsg* IrcReply_ErrBadChannelKey(
+		const char* servername, IrcChannelType channelType, const char* channelName);
 
 #endif // AMN_IRC_REPLY_H

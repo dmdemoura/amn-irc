@@ -76,7 +76,7 @@ const char* IrcMsgReader_Read(IrcMsgReader* self)
 
 		readLen = read(self->socket, self->readBuffer, IRC_MSG_SIZE);
 
-		if (readLen == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+		if (readLen == -1 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR))
 		{
 			return NULL;
 		}

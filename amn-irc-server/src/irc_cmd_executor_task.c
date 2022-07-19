@@ -1,6 +1,7 @@
 #include "irc_cmd_executor_task.h"
 
 #include "array_list.h"
+#include "irc_cmd.h"
 #include "irc_reply.h"
 #include "send_msg_task.h"
 #include "irc_cmd_unparser.h"
@@ -10,8 +11,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Unsigned integers overflow nicely so even if you manage to have over
+// 18,446,744,073,709,551,616 users across the timespan the server is running
+// you should not have any problems unless you also have someone logged in
+// for that same amount of time.
+typedef uint64_t UserId;
+
+static bool UserId_Cmp(const void* self, const void* other)
+{
+	return *((UserId*)self) == *((UserId*) other);
+}
+
 typedef struct User
 {
+	UserId id;
 	int socket;
 	char* nickname;
 	char* username;
@@ -50,6 +63,11 @@ static bool User_CmpSocket(const void* user, const void* socket)
 	return ((User*) user)->socket == *((int*) socket);
 }
 
+// static bool User_CmpId(const void* user, const void* id)
+// {
+// 	return ((User*) user)->id == *((UserId*) id);
+// }
+
 static bool User_CmpNick(const void* arg1, const void* arg2)
 {
 	User* user = (User*) arg1;
@@ -60,29 +78,81 @@ static bool User_CmpNick(const void* arg1, const void* arg2)
 		return false;
 	}
 
-	return strcmp(user->nickname, nickname) == 0;
+	return StrUtils_Equals(user->nickname, nickname);
+}
+
+typedef struct Channel
+{
+	char* name;
+
+	IrcModes modes;
+	ArrayList* operatorIds;
+	size_t limit;
+	char* banmask;
+	char* key;
+
+	ArrayList* memberIds;
+	char* topic;
+}
+Channel;
+
+static void Channel_Delete(void* arg)
+{
+	if (arg == NULL)
+	{
+		return;
+	}
+	
+	Channel* channel = (Channel*) arg;
+
+	free(channel->name);
+	ArrayList_Delete(channel->operatorIds);
+	free(channel->banmask);
+	free(channel->key);
+	ArrayList_Delete(channel->memberIds);
+	free(channel->topic);
+	// Channel struct is part of the arraylist storage
+	// free(channel);
+}
+
+static bool Channel_CmpName(const void* arg1, const void* arg2)
+{
+	Channel* channel = (Channel*) arg1;
+	char* name = (char*) arg2;
+
+	return StrUtils_Equals(channel->name, name);
 }
 
 typedef struct IrcCmdExecutorContext
 {
+	// Non-Owned objects
 	const Logger* log;
 	TaskQueue* tasks;
 	IrcCmdQueue* cmds;
 
+	// Owned objects
 	char* servername;
+	// There are better data structures for this but this is C
+	// and I don't have time to implement a entire hashmap.
 	ArrayList* users;
+	ArrayList* localChannels;
+	ArrayList* distChannels;
 	IrcMsgValidator* msgValidator;
 	IrcCmdUnparser* cmdUnparser;
+	UserId nextUserId;
+
+	// Execution scoped fields:
+	
+	// Command processed successfully or failed.
+	// Only unexpected errors are considered failures.
+	// Bad user input correctly handled is still a success.
+	bool success;
+	// Replies to be sent after processing this command
+	ArrayList* replyBuf;
+	// Commands to be sent after processing this command
+	ArrayList* cmdBuf;
 }
 IrcCmdExecutorContext;
-
-typedef enum NickCollisionStatus
-{
-	NickCollisionStatus_None,
-	NickCollisionStatus_Collision,
-	NickCollisionStatus_Error
-}
-NickCollisionStatus;
 
 static IrcCmdExecutorContext* IrcCmdExecutorContext_New(
 		const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds, const char* servername);
@@ -91,24 +161,46 @@ static void IrcCmdExecutorContext_Delete(void* context);
 
 static TaskStatus WaitForCmds(void* context);
 
-static bool ExecuteCmd(IrcCmdExecutorContext* ctx, IrcCmd* cmd);
+static void ExecuteCmd(IrcCmdExecutorContext* ctx, IrcCmd* cmd);
 
-static bool ExecuteCmdNick(
-		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdNick* cmd);
+static void ExecuteCmdNick(
+		IrcCmdExecutorContext* ctx, int peerSocket, IrcCmdNick* cmd);
 
-static NickCollisionStatus ExecuteCmdNick_CheckAndHandleCollision(
-		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdNick* cmd);
+static bool ExecuteCmdNick_CheckCollision(IrcCmdExecutorContext* ctx, IrcCmdNick* cmd);
 
-static bool ExecuteCmdUser(
-		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdUser* cmd);
+static void ExecuteCmdUser(
+		IrcCmdExecutorContext* ctx, int peerSocket, IrcCmdUser* cmd);
 
-static bool ExecuteCmdPrivMsg(
-		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdPrivMsg* cmd);
+static void ExecuteCmdQuit(
+		IrcCmdExecutorContext* ctx, int peerSocket, IrcCmdQuit* cmd);
 
-static bool ExecuteCmdQuit(
-		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdQuit* cmd);
+static void ExecuteCmdJoin(
+		IrcCmdExecutorContext* ctx, int peerSocket, IrcCmdJoin* cmd);
 
-static bool Reply(IrcCmdExecutorContext* ctx, const int peerSocket, IrcMsg* msg);
+static void ExecuteCmdJoin_CreateChannel(
+		IrcCmdExecutorContext* ctx, ArrayList* channels,
+		User* user, IrcChannelAndKey* channelAndKey);
+
+static void ExecuteCmdJoin_JoinChannel(
+		IrcCmdExecutorContext* ctx,
+		User* user,
+		Channel* channel,
+		IrcChannelType channelType,
+		char* key);
+
+static void ExecuteCmdPrivMsg(
+		IrcCmdExecutorContext* ctx, int peerSocket, IrcCmdPrivMsg* cmd);
+
+
+static User* WithRegisteredUser(IrcCmdExecutorContext* ctx, int peerSocket);
+static ArrayList* ChannelList(IrcCmdExecutorContext* ctx, IrcChannelType type);
+
+static void AddReply(IrcCmdExecutorContext* ctx, IrcMsg* msg);
+static void AddCmd(IrcCmdExecutorContext* ctx, const IrcCmd* cmd);
+
+static void SendReplies(IrcCmdExecutorContext* ctx, int peerSocket);
+static void SendCmds(IrcCmdExecutorContext* ctx);
+static void SendMsg(IrcCmdExecutorContext* ctx, int peerSocket, IrcMsg* msg);
 
 
 Task* IrcCmdExecutorTask_New(const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds,
@@ -132,6 +224,13 @@ Task* IrcCmdExecutorTask_New(const Logger* log, TaskQueue* tasks, IrcCmdQueue* c
 	return self;
 }
 
+static void IrcMsgPtrDelete(void* arg)
+{
+	IrcMsg* msg = *(IrcMsg**) arg;
+
+	IrcMsg_Delete(msg);
+}
+
 static IrcCmdExecutorContext* IrcCmdExecutorContext_New(
 		const Logger* log, TaskQueue* tasks, IrcCmdQueue* cmds, const char* servername)
 {
@@ -143,11 +242,29 @@ static IrcCmdExecutorContext* IrcCmdExecutorContext_New(
 	ctx->log = log;
 	ctx->tasks = tasks;
 	ctx->cmds = cmds;
+	ctx->nextUserId = 0;
+	ctx->success = true;
 
 	ctx->users = ArrayList_New(100, 100, sizeof(User), User_Delete);
 	if (ctx->users == NULL)
 	{
 		LOG_ERROR(log, "Failed to create users list.");
+		IrcCmdExecutorContext_Delete(ctx);
+		return NULL;
+	}
+
+	ctx->localChannels = ArrayList_New(50, 50, sizeof(Channel), Channel_Delete);
+	if (ctx->localChannels == NULL)
+	{
+		LOG_ERROR(log, "Failed to create local channels list.");
+		IrcCmdExecutorContext_Delete(ctx);
+		return NULL;
+	}
+
+	ctx->distChannels = ArrayList_New(100, 100, sizeof(Channel), Channel_Delete);
+	if (ctx->distChannels == NULL)
+	{
+		LOG_ERROR(log, "Failed to create distributed channels list.");
 		IrcCmdExecutorContext_Delete(ctx);
 		return NULL;
 	}
@@ -183,6 +300,22 @@ static IrcCmdExecutorContext* IrcCmdExecutorContext_New(
 		return NULL;
 	}
 
+	ctx->replyBuf = ArrayList_New(100, 100, sizeof(IrcMsg*), IrcMsgPtrDelete);
+	if (ctx->replyBuf == NULL)
+	{
+		LOG_ERROR(log, "Failed to create reply buffer.");
+		IrcCmdExecutorContext_Delete(ctx);
+		return NULL;
+	}
+
+	ctx->cmdBuf = ArrayList_New(100, 100, sizeof(IrcCmd), NULL);
+	if (ctx->cmdBuf == NULL)
+	{
+		LOG_ERROR(log, "Failed to create cmd buffer.");
+		IrcCmdExecutorContext_Delete(ctx);
+		return NULL;
+	}
+
 	return ctx;
 }
 
@@ -199,6 +332,10 @@ static void IrcCmdExecutorContext_Delete(void* arg)
 	IrcCmdUnparser_Delete(ctx->cmdUnparser);
 	IrcMsgValidator_Delete(ctx->msgValidator);
 	ArrayList_Delete(ctx->users);
+	ArrayList_Delete(ctx->localChannels);
+	ArrayList_Delete(ctx->distChannels);
+	ArrayList_Delete(ctx->replyBuf);
+	ArrayList_Delete(ctx->cmdBuf);
 	free(ctx);
 }
 
@@ -217,11 +354,17 @@ static TaskStatus WaitForCmds(void* arg)
 		return TaskStatus_Failed;
 	}
 
-	bool result = ExecuteCmd(ctx, cmd);
+	ctx->success = true;
+
+	ExecuteCmd(ctx, cmd);
+	SendReplies(ctx, cmd->peerSocket);
+	SendCmds(ctx);
 
 	IrcCmd_Delete(cmd);
+	ArrayList_Clear(ctx->replyBuf);
+	ArrayList_Clear(ctx->cmdBuf);
 
-	if (!result)
+	if (!ctx->success)
 	{
 		LOG_ERROR(ctx->log, "Failed to execute command!");
 		return TaskStatus_Failed;
@@ -230,33 +373,32 @@ static TaskStatus WaitForCmds(void* arg)
 	return TaskStatus_Yield;
 }
 
-static bool ExecuteCmd(IrcCmdExecutorContext* ctx, IrcCmd* cmd)
+static void ExecuteCmd(IrcCmdExecutorContext* ctx, IrcCmd* cmd)
 {
-	// TODO: Do stuff
-	bool result = true;
-
 	switch(cmd->type)
 	{
 		case IrcCmdType_Nick:
-			result = ExecuteCmdNick(ctx, cmd->peerSocket, &cmd->nick);
+			ExecuteCmdNick(ctx, cmd->peerSocket, &cmd->nick);
 		break;
 		case IrcCmdType_User:
-			result = ExecuteCmdUser(ctx, cmd->peerSocket, &cmd->user);
-		break;
-		case IrcCmdType_PrivMsg:
-			result = ExecuteCmdPrivMsg(ctx, cmd->peerSocket, &cmd->privMsg);
+			ExecuteCmdUser(ctx, cmd->peerSocket, &cmd->user);
 		break;
 		case IrcCmdType_Quit:
-			result = ExecuteCmdQuit(ctx, cmd->peerSocket, &cmd->quit);
+			ExecuteCmdQuit(ctx, cmd->peerSocket, &cmd->quit);
+		break;
+		case IrcCmdType_Join:
+			ExecuteCmdJoin(ctx, cmd->peerSocket, &cmd->join);
+		break;
+		case IrcCmdType_PrivMsg:
+			ExecuteCmdPrivMsg(ctx, cmd->peerSocket, &cmd->privMsg);
+		break;
 		default:
 		break;
 	}
-
-	return result;
 }
 
-static bool ExecuteCmdNick(
-		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdNick* cmd)
+static void ExecuteCmdNick(
+		IrcCmdExecutorContext* ctx, int peerSocket, IrcCmdNick* cmd)
 {
 	User* existingUser = ArrayList_Find(ctx->users, User_CmpSocket, &peerSocket);
 
@@ -265,17 +407,12 @@ static bool ExecuteCmdNick(
 		// Nickname change
 		// TODO: Nickname change.
 		LOG_ERROR(ctx->log, "Nickname change is unimplemented!");
-		return true;
+		return;
 	}
 
-	switch (ExecuteCmdNick_CheckAndHandleCollision(ctx, peerSocket, cmd))
+	if (ExecuteCmdNick_CheckCollision(ctx, cmd))
 	{
-		case NickCollisionStatus_None:
-			break;
-		case NickCollisionStatus_Collision:
-			return true;
-		case NickCollisionStatus_Error:
-			return false;
+		return;
 	}
 
 	if (existingUser != NULL)
@@ -285,13 +422,15 @@ static bool ExecuteCmdNick(
 	else
 	{
 		User newUser = {
+			.id = ctx->nextUserId++,
 			.socket = peerSocket,
 			.nickname = cmd->nickname
 		};
 
 		if (!ArrayList_Append(ctx->users, &newUser))
 		{
-			return false;
+			ctx->success = false;
+			return;
 		}
 	}
 
@@ -299,57 +438,32 @@ static bool ExecuteCmdNick(
 
 	// IrcCmd will not be used afterwards so we can steal the memory allocation
 	cmd->nickname = NULL;
-
-	return true;
 }
 
-static NickCollisionStatus ExecuteCmdNick_CheckAndHandleCollision(
-		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdNick* cmd)
+static bool ExecuteCmdNick_CheckCollision(IrcCmdExecutorContext* ctx, IrcCmdNick* cmd)
 {
 	User* userWithNick = ArrayList_Find(ctx->users, User_CmpNick, cmd->nickname);
 
 	if (userWithNick == NULL)
 	{
-		return NickCollisionStatus_None;
+		return false;
 	}
 
 	LOG_INFO(ctx->log, "Nickname collision: %s.", cmd->nickname);
+	AddReply(ctx, IrcReply_ErrNickCollision(ctx->servername, cmd->nickname));
 
-	IrcMsg* reply = IrcReply_ErrNickCollision(ctx->servername, cmd->nickname);
-	if (reply == NULL)
-	{
-		LOG_ERROR(ctx->log, "Failed to generate reply");
-		return NickCollisionStatus_Error;
-	}
-
-	if (!Reply(ctx, peerSocket, reply))
-	{
-		return NickCollisionStatus_Error;
-	}
-
-	return NickCollisionStatus_Collision;
+	return true;
 }
 
-static bool ExecuteCmdUser(
-		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdUser* cmd)
+static void ExecuteCmdUser(
+		IrcCmdExecutorContext* ctx, int peerSocket, IrcCmdUser* cmd)
 {
 	User* existingUser = ArrayList_Find(ctx->users, User_CmpSocket, &peerSocket);
 
 	if (existingUser != NULL && User_IsRegistered(existingUser))
 	{
-		IrcMsg* reply = IrcReply_ErrAlreadyRegistered(ctx->servername);
-		if (reply == NULL)
-		{
-			LOG_ERROR(ctx->log, "Failed to generate reply");
-			return false;
-		}
-
-		if (!Reply(ctx, peerSocket, reply))
-		{
-			return false;
-		}
-
-		return true;
+		AddReply(ctx, IrcReply_ErrAlreadyRegistered(ctx->servername));
+		return;
 	}
 
 	if (existingUser != NULL)
@@ -361,6 +475,7 @@ static bool ExecuteCmdUser(
 	else
 	{
 		User newUser = {
+			.id = ctx->nextUserId++,
 			.socket = peerSocket,
 			.username = cmd->username,
 			.hostname = cmd->hostname,
@@ -369,7 +484,8 @@ static bool ExecuteCmdUser(
 
 		if (!ArrayList_Append(ctx->users, &newUser))
 		{
-			return false;
+			ctx->success = false;
+			return;
 		}
 	}
 
@@ -384,30 +500,15 @@ static bool ExecuteCmdUser(
 	cmd->username = NULL;
 	cmd->hostname = NULL;
 	cmd->realname = NULL;
-
-	return true;
 }
 
-static bool ExecuteCmdPrivMsg(
-		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdPrivMsg* cmd)
+static void ExecuteCmdPrivMsg(
+		IrcCmdExecutorContext* ctx, int peerSocket, IrcCmdPrivMsg* cmd)
 {
-	User* user = ArrayList_Find(ctx->users, User_CmpSocket, &peerSocket);
-
-	if (user == NULL || !User_IsRegistered(user))
+	User* user = WithRegisteredUser(ctx, peerSocket);
+	if (user == NULL)
 	{
-		IrcMsg* reply = IrcReply_ErrNotRegistered(ctx->servername);
-		if (reply == NULL)
-		{
-			LOG_ERROR(ctx->log, "Failed to generate reply");
-			return false;
-		}
-
-		if (!Reply(ctx, peerSocket, reply))
-		{
-			return false;
-		}
-
-		return true;
+		return;
 	}
 
 	IrcCmd cmdToSend = {
@@ -424,7 +525,8 @@ static bool ExecuteCmdPrivMsg(
 	if (msgToSend == NULL)
 	{
 		LOG_ERROR(ctx->log, "Failed to unparse PRIVMSG");
-		return false;
+		ctx->success = false;
+		return;
 	}
 
 	for (size_t i = 0; i < cmd->receiverCount; i++)
@@ -436,27 +538,23 @@ static bool ExecuteCmdPrivMsg(
 				User* userWithNick = ArrayList_Find(
 						ctx->users, User_CmpNick, cmd->receiver[i].value);
 
-				if (userWithNick == NULL)
+				if (userWithNick == NULL || !User_IsRegistered(userWithNick))
 				{
-					IrcMsg* reply = IrcReply_ErrNoSuchNick(
-							ctx->servername, cmd->receiver[i].value);
-					if (reply == NULL)
+					AddReply(ctx, IrcReply_ErrNoSuchNick(
+								ctx->servername, cmd->receiver[i].value));
+					if (!ctx->success)
 					{
-						LOG_ERROR(ctx->log, "Failed to generate reply");
-						return false;
+						return;
 					}
 
-					if (!Reply(ctx, peerSocket, reply))
-					{
-						return false;
-					}
-
-					return true;
+					continue;
 				}
 
-				if (!Reply(ctx, userWithNick->socket, msgToSend))
+				cmdToSend.peerSocket = userWithNick->socket;
+				AddCmd(ctx, &cmdToSend);
+				if (!ctx->success)
 				{
-					return false;
+					return;
 				}
 			}
 			break;
@@ -467,36 +565,261 @@ static bool ExecuteCmdPrivMsg(
 				break;
 		}
 	}
-	return true;
 }
 
-static bool ExecuteCmdQuit(
-		IrcCmdExecutorContext* ctx, const int peerSocket, IrcCmdQuit* cmd)
+static void ExecuteCmdJoin(
+		IrcCmdExecutorContext* ctx, int peerSocket, IrcCmdJoin* cmd)
 {
-	(void) cmd;
+	LOG_DEBUG(ctx->log, "Got JOIN command");
+	User* user = WithRegisteredUser(ctx, peerSocket);
+	if (user == NULL)
+	{
+		return;
+	}
 
-	ArrayList_Remove(ctx->users, User_CmpSocket, &peerSocket);
+	for (size_t i = 0; ctx->success && i < cmd->channelCount; i++)
+	{
+		ArrayList* channels = ChannelList(ctx, cmd->channels[i].type); 
+		Channel* channel = ArrayList_Find(channels, Channel_CmpName, cmd->channels[i].name);
 
-	LOG_INFO(ctx->log, "Client unregistered.");
-
-	// TODO: Figure out how to close socket
-	return true;
+		if (channel != NULL)
+		{
+			ExecuteCmdJoin_JoinChannel(ctx, user, channel, cmd->channels[i].type,
+					cmd->channels[i].key);
+		}
+		else
+		{
+			ExecuteCmdJoin_CreateChannel(ctx, channels, user, &cmd->channels[i]);
+		}
+	}
 }
 
-static bool Reply(IrcCmdExecutorContext* ctx, const int peerSocket, IrcMsg* msg)
+static void ExecuteCmdJoin_CreateChannel(
+		IrcCmdExecutorContext* ctx,
+		ArrayList* channels,
+		User* user,
+		IrcChannelAndKey* channelAndKey)
+{
+	Channel channel = {
+		.name = channelAndKey->name,
+		.operatorIds = ArrayList_New(10, 10, sizeof(UserId), NULL),
+		.modes = channelAndKey->key != NULL ? IrcMode_Channel_RequiresKey : IrcMode_None,
+		.limit = SIZE_MAX,
+		.banmask = NULL,
+		.key = channelAndKey->key,
+		.memberIds = ArrayList_New(100, 100, sizeof(UserId), NULL),
+		.topic = NULL,
+	};
+
+	if (channel.operatorIds == NULL)
+	{
+		LOG_ERROR(ctx->log, "Failed to create channel operator id list.");
+		goto error;
+	}
+
+	if (channel.memberIds == NULL)
+	{
+		LOG_ERROR(ctx->log, "Failed to create channel member id list.");
+		goto error;
+	}
+
+	if (!ArrayList_Append(channel.operatorIds, &user->id))
+	{
+		LOG_ERROR(ctx->log, "Failed to add user id to operator list.");
+		goto error;
+	}
+
+	if (!ArrayList_Append(channel.memberIds, &user->id))
+	{
+		LOG_ERROR(ctx->log, "Failed to add user id to member list.");
+		goto error;
+	}
+
+	if (!ArrayList_Append(channels, &channel))
+	{
+		LOG_ERROR(ctx->log, "Failed to add channel to list.");
+		goto error;
+	}
+
+
+	// Steal allocations.
+	channelAndKey->name = NULL;
+	channelAndKey->key = NULL;
+
+	LOG_DEBUG(ctx->log, "Created channel: %s", channel.name);
+	return;
+
+error:
+	ctx->success = false;
+	Channel_Delete(&channel);
+}
+
+static void ExecuteCmdJoin_JoinChannel(
+		IrcCmdExecutorContext* ctx,
+		User* user,
+		Channel* channel,
+		IrcChannelType channelType,
+		char* key)
+{
+	if (ArrayList_Find(channel->memberIds, UserId_Cmp, &user->id) != NULL)
+	{
+		LOG_DEBUG(ctx->log, "User already in channel: %s.", channel->name);
+		return;
+	}
+
+	if (channel->modes & IrcMode_Channel_InviteOnly)
+	{
+		AddReply(ctx, IrcReply_ErrInviteOnlyChan(
+					ctx->servername, channelType, channel->name)); 
+		return;
+	}
+
+	if (channel->modes & IrcMode_Channel_RequiresKey
+			&& !StrUtils_Equals(channel->key, key))
+	{
+		AddReply(ctx, IrcReply_ErrBadChannelKey(ctx->servername, channelType, channel->name)); 
+		return;
+	}
+
+	if (channel->modes & IrcMode_Channel_LimitedUsers
+			&& ArrayList_Size(channel->memberIds) >= channel->limit)
+	{
+		AddReply(ctx, IrcReply_ErrChannelIsFull(
+					ctx->servername, channelType, channel->name)); 
+		return;
+	}
+
+	// TODO: Validate banmask!
+
+	if (!ArrayList_Append(channel->memberIds, &user->id))
+	{
+		LOG_ERROR(ctx->log, "Failed to add user id to member list.");
+		ctx->success = false;
+		return;
+	}
+
+	LOG_DEBUG(ctx->log, "Joined channel: %s.", channel->name);
+
+	if (channel->topic == NULL)
+	{
+		return;
+	}
+
+	AddReply(ctx, IrcReply_RplTopic(
+				ctx->servername, channelType, channel->name, channel->topic));
+}
+
+
+static void ExecuteCmdQuit(
+		IrcCmdExecutorContext* ctx, int peerSocket, IrcCmdQuit* cmd)
+{
+	if (ArrayList_Remove(ctx->users, User_CmpSocket, &peerSocket, true))
+	{
+		LOG_DEBUG(ctx->log, "Client unregistered: %s", cmd->quitMessage);
+	}
+}
+
+
+static User* WithRegisteredUser(IrcCmdExecutorContext* ctx, int peerSocket)
+{
+	User* user = ArrayList_Find(ctx->users, User_CmpSocket, &peerSocket);
+
+	if (user == NULL || !User_IsRegistered(user))
+	{
+		AddReply(ctx, IrcReply_ErrNotRegistered(ctx->servername));
+		return NULL;
+	}
+
+	return user;
+}
+
+static ArrayList* ChannelList(IrcCmdExecutorContext* ctx, IrcChannelType type)
+{
+	switch (type)
+	{
+		case IrcChannelType_Local:
+			return ctx->localChannels;
+		case IrcChannelType_Distributed:
+			return ctx->distChannels;
+		default:
+			LOG_ERROR(ctx->log, "Unknown channel type");
+			return NULL;
+	}
+}
+
+static void AddReply(IrcCmdExecutorContext* ctx, IrcMsg* reply)
+{
+	if (reply == NULL)
+	{
+		LOG_ERROR(ctx->log, "Failed to generate reply");
+		ctx->success = false;
+		return;
+	}
+
+	if (!ArrayList_Append(ctx->replyBuf, &reply))
+	{
+		LOG_ERROR(ctx->log, "Failed to append to replyBuf");
+		ctx->success = false;
+	}
+}
+
+static void AddCmd(IrcCmdExecutorContext* ctx, const IrcCmd* cmd)
+{
+	if (!ArrayList_Append(ctx->cmdBuf, cmd))
+	{
+		LOG_ERROR(ctx->log, "Failed to append to cmdBuf.");
+		ctx->success = false;
+	}
+}
+
+static void SendReplies(IrcCmdExecutorContext* ctx, int peerSocket)
+{
+	for (size_t i = ArrayList_Size(ctx->replyBuf); ctx->success && i > 0; i--)
+	{
+		IrcMsg* reply = *(IrcMsg**) ArrayList_Get(ctx->replyBuf, i - 1);
+		if (!ArrayList_RemoveIndex(ctx->replyBuf, i - 1, false))
+		{
+			LOG_ERROR(ctx->log, "Failed to remove from reply buffer.");
+			ctx->success = false;
+			return;
+		}
+
+		SendMsg(ctx, peerSocket, reply);
+	}
+}
+
+static void SendCmds(IrcCmdExecutorContext* ctx)
+{
+	for (size_t i = 0; ctx->success && i < ArrayList_Size(ctx->cmdBuf); i++)
+	{
+		IrcCmd* cmd = ArrayList_Get(ctx->cmdBuf, i);
+
+		IrcMsg* msg = IrcCmdUnparser_Unparse(ctx->cmdUnparser, cmd);
+		if (msg == NULL)
+		{
+			LOG_ERROR(ctx->log, "Failed to unparse command.");
+			ctx->success = false;
+			return;	
+		}
+
+		SendMsg(ctx, cmd->peerSocket, msg);
+	}
+}
+
+static void SendMsg(IrcCmdExecutorContext* ctx, int peerSocket, IrcMsg* msg)
 {
 	Task* sendMsgTask = SendMsgTask_New(ctx->log, peerSocket, msg);
+
 	if (sendMsgTask == NULL)
 	{
 		LOG_ERROR(ctx->log, "Failed to create send msg task!");
-		return false;
+		ctx->success = false;
+		return;
 	}
 
 	if (!TaskQueue_Push(ctx->tasks, sendMsgTask))
 	{
 		LOG_ERROR(ctx->log, "Failed to push send message task onto queue");
-		return false;
+		ctx->success = false;
 	}
-
-	return true;
 }

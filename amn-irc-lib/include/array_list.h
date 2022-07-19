@@ -26,10 +26,12 @@ size_t ArrayList_FindIndex(
 size_t ArrayList_Size(ArrayList* self);
 
 bool ArrayList_Remove(
-		ArrayList* self, bool compare(const void*, const void*), const void* compareData);
-bool ArrayList_RemoveIndex(ArrayList* self, size_t index);
+		ArrayList* self, bool compare(const void*, const void*), const void* compareData,
+		bool delete);
+bool ArrayList_RemoveIndex(ArrayList* self, size_t index, bool delete);
 
 void ArrayList_Print(ArrayList* self, void printData(void*));
+void ArrayList_Clear(ArrayList* self);
 void ArrayList_Delete(ArrayList* self);
 
 

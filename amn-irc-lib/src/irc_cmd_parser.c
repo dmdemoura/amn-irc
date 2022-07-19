@@ -14,8 +14,13 @@ struct IrcCmdParser
 
 static bool ParseNick(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg);
 static bool ParseUser(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg);
+static bool ParseJoin(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg);
+// static bool ParseMode(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg);
+// static bool ParseKick(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg);
 static bool ParseQuit(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg);
 static bool ParsePrivMsg(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg);
+
+static size_t CsvCount(const char* param);
 
 IrcCmdParser* IrcCmdParser_New(const Logger* log, const IrcMsgValidator* validator)
 {
@@ -66,6 +71,9 @@ IrcCmd* IrcCmdParser_Parse(IrcCmdParser* self, const IrcMsg* msg, const int peer
 		break;
 	case IrcCmdType_User:
 		success = ParseUser(self, cmd, msg);
+		break;
+	case IrcCmdType_Join:
+		success = ParseJoin(self, cmd, msg);
 		break;
 	case IrcCmdType_Quit:
 		success = ParseQuit(self, cmd, msg);
@@ -211,6 +219,118 @@ static bool ParseQuit(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg)
 	return true;
 }
 
+static bool ParseJoin(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg)
+{
+	// Initialize everything to defaults in case we need to call Delete.
+	cmd->join = (IrcCmdJoin) {0};
+
+	if (msg->paramCount < 1 || msg->paramCount > 2)
+	{
+		LOG_WARN(self->log, "Got JOIN cmd with %zu parameters. Expected: 1 or 2",
+				msg->paramCount);
+		return false;
+	}
+		
+	size_t channelCount = CsvCount(msg->params[0]);
+	if (msg->paramCount == 2)
+	{
+		size_t keyCount = CsvCount(msg->params[1]);
+		if (keyCount > channelCount)
+		{
+			LOG_WARN(self->log, "Got JOIN cmd with more keys than channels.",
+					msg->paramCount);
+			return false;
+		}
+	}
+
+	cmd->join.channels = malloc(sizeof(IrcChannelAndKey) * channelCount);
+	if (cmd->join.channels == NULL)
+	{
+		return false;
+	}
+
+	const char* channel = msg->params[0];
+	for (size_t i = 0; true; i++)
+	{
+		const char* channelEnd = strchr(channel, ',');
+		channelEnd = channelEnd == NULL ? strchr(channel, '\0') : channelEnd;
+
+		switch(*channel)
+		{
+			case '&':
+				cmd->join.channels[i].type = IrcChannelType_Local;
+				break;
+			case '#':
+				cmd->join.channels[i].type = IrcChannelType_Distributed;
+				break;
+			default:
+				LOG_WARN(self->log,
+						"Expect channel type to be either '#' or '&', but was: '%c'",
+						*channel);
+				return false;
+		}
+
+		channel++;
+
+		if(!IrcMsgValidator_ValidateChstring(
+					self->validator, channel, channelEnd))
+		{
+			LOG_WARN(self->log, "Got JOIN cmd with invalid channel[%zu] name: %s.",
+						i, channel);
+				return false;	
+		}
+
+		cmd->join.channels[i].name = StrUtils_CloneRange(channel, channelEnd);
+		if (cmd->join.channels[i].name == NULL)
+		{
+			LOG_ERROR(self->log, "Failed to clone channel[%zu] name string", i);
+			return false;
+		}
+
+		cmd->join.channels[i].key = NULL;
+		cmd->join.channelCount++; 
+
+		if (*channelEnd != '\0')
+		{
+			channel = channelEnd + 1;
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	if (msg->paramCount == 1)
+	{
+		return true;
+	}
+
+	const char* key = msg->params[1];
+	for (size_t i = 0; true; i++)
+	{
+		const char* keyEnd = strchr(key, ',');
+		keyEnd = keyEnd == NULL ? strchr(key, '\0') : keyEnd;
+
+		cmd->join.channels[i].key = StrUtils_CloneRange(key, keyEnd);
+		if (cmd->join.channels[i].key == NULL)
+		{
+			LOG_ERROR(self->log, "Failed to clone channel[%zu] key string", i);
+			return false;
+		}
+
+		if (*keyEnd != '\0')
+		{
+			key = keyEnd + 1;
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	return true;	
+}
+
 static bool ParsePrivMsg(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg)
 {
 	// Initialize everything to defaults in case we need to call Delete.
@@ -223,14 +343,7 @@ static bool ParsePrivMsg(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg)
 		return false;
 	}
 		
-	size_t receiverCount = 1;
-	for (char* c = msg->params[0]; *c != '\0'; c++)
-	{
-		if (*c == ',')
-		{
-			receiverCount++;
-		}
-	}
+	size_t receiverCount = CsvCount(msg->params[0]);
 
 	cmd->privMsg.receiver = malloc(sizeof(IrcReceiver) * receiverCount);
 	if (cmd->privMsg.receiver == NULL)
@@ -303,4 +416,19 @@ static bool ParsePrivMsg(IrcCmdParser* self, IrcCmd* cmd, const IrcMsg* msg)
 	}
 
 	return true;
+}
+
+static size_t CsvCount(const char* param)
+{
+	size_t count = 1;
+
+	for (; *param != '\0'; param++)
+	{
+		if (*param == ',')
+		{
+			count++;
+		}
+	}
+
+	return count;
 }

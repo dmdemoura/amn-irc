@@ -45,6 +45,21 @@ char* StrUtils_CloneRange(const char* start, const char* end)
 	return clone;
 }
 
+bool StrUtils_Equals(const char* str, const char* other)
+{
+	if (str == other)
+	{
+		return true;
+	}
+
+	if (str == NULL || other == NULL)
+	{
+		return false;
+	}
+
+	return strcmp(str, other) == 0;
+}
+
 bool StrUtils_ReadSizeT(const char* str, size_t* value)
 {
 	if (*str == '\0')
