@@ -1,3 +1,4 @@
+#include "application.h"
 #include "log.h"
 #include "tui.h"
 #include "task.h"
@@ -16,9 +17,10 @@
 #include <unistd.h>
 
 #define RUNNER_COUNT 10
-#define PROTOCOL_IP 0
-#define SERVER_PORT "6667"
 #define TIMEOUT 10
+
+static bool StartClient(const Logger* log, TaskQueue* tasks, UserInputQueue* userInput);
+static bool SetupSignals(const Logger* log);
 
 int main()
 {
@@ -47,6 +49,8 @@ int main()
 	}
 
 	LOG_INFO(log, "Starting amn-irc-client...");
+
+	SetupSignals(log);
 
 	tasks = TaskQueue_New(10, TIMEOUT);
 	if (tasks == NULL)
@@ -77,6 +81,12 @@ int main()
 		}
 	}
 
+	if (!StartClient(log, tasks, userInput))
+	{
+		LOG_ERROR(log, "Failed to start client!");
+		goto cleanup;
+	}
+
 	if (!Tui_Run(tui))
 	{
 		LOG_ERROR(log, "Unexpected error while running TUI");
@@ -84,8 +94,10 @@ int main()
 	}
 
 	result = EXIT_SUCCESS;
+	Application_ShouldShutdown();
 
 cleanup:	
+	fflush(logFile);
 
 	for (size_t i = 0; i < RUNNER_COUNT; i++)
 	{
@@ -94,6 +106,7 @@ cleanup:
 
 	Tui_Delete(tui);
 	UserInputQueue_Delete(userInput);
+	UserOutputQueue_Delete(userOutput);
 	TaskQueue_Delete(tasks);
 	Logger_Destroy(log);
 	fclose(logFile);
@@ -101,79 +114,66 @@ cleanup:
 	return result;
 }
 
-struct addrinfo* getServerAddress(const Logger* log)
+static bool StartClient(const Logger* log, TaskQueue* tasks, UserInputQueue* userInput)
 {
-	struct addrinfo hints = {
-		// Find an IPv6 address
-		.ai_family = AF_INET6,
-		// for stream socket
-		.ai_socktype = SOCK_STREAM,
-		// to bind a socket to accept connections
-		.ai_flags = AI_PASSIVE | AI_NUMERICSERV,
-		// using TCP/IP
-		.ai_protocol = IPPROTO_TCP,
-	};
-
-	struct addrinfo* result = NULL;
-
-	if(getaddrinfo(NULL, SERVER_PORT, &hints, &result) == 0)
-	{
-		return result;
-	}
-	else
-	{
-		LOG_ERROR(log, "Failed to get addrinfo.");
-		return NULL;
-	}
-}
-
-int setupSocket(const Logger* log, struct addrinfo* address)
-{
-	LOG_DEBUG(log, "Creating socket");
-
-	int connectSocket = socket(AF_INET6, SOCK_STREAM, PROTOCOL_IP);
-	if (connectSocket == -1)
-	{
-		LOG_ERROR(log, "Failed to create socket");
-		return -1;
-	}
-
-	LOG_DEBUG(log, "Connecting socket");
-
-	if(connect(connectSocket, address->ai_addr, address->ai_addrlen) == -1)
-	{
-		LOG_ERROR(log, "Failed to connect to address");
-		return -1;
-	}
-
-	return connectSocket;
-}
-
-bool StartServer(const Logger* log, TaskQueue* tasks, UserInputQueue* userInput)
-{
-	struct addrinfo* address = getServerAddress(log);
-	if(address == NULL)
-		return false;
-
-	int clientSocket = setupSocket(log, address);
-	freeaddrinfo(address);
-	if(clientSocket == -1)
-		return false;
-
-	Task* msgSenderTask = MsgSenderTask_New(log, userInput, clientSocket);
+	Task* msgSenderTask = MsgSenderTask_New(log, userInput);
 	if (msgSenderTask == NULL)
 	{
 		LOG_ERROR(log, "Failed to create task to send messages.");
-		if (close(clientSocket) != 0)
-		{
-			LOG_ERROR(log, "Failed to close client socket.");
-		}
 		return false;
 	}
 
 	if (!TaskQueue_Push(tasks, msgSenderTask)) 
 	{
 		LOG_ERROR(log, "Failed to push msg sender task to queue.");
+		return false;
+	}
+
+	return true;
+}
+
+void signalHandler(int signum)
+{
+	switch (signum)
+	{
+		case SIGINT:
+			break; // Ignore SIGINT
+		case SIGTERM:
+		case SIGQUIT:
+			Application_StartShutdown();
+		break;
+	}
+}
+
+bool SetupSignals(const Logger* log)
+{
+
+	struct sigaction act =
+	{
+		.sa_handler = signalHandler 
+	};
+
+	if (sigemptyset(&act.sa_mask) != 0)
+	{
+		LOG_ERROR(log, "Failed to set empty signal mask!");
+		return false;
+	}
+
+	if (sigaction(SIGINT, &act, NULL) != 0)
+	{
+		LOG_ERROR(log, "Failed to register SIGINT handler!");
+		return false;
+	}
+
+	if (sigaction(SIGTERM, &act, NULL) != 0)
+	{
+		LOG_ERROR(log, "Failed to register SIGTERM signal handler!");
+		return false;
+	}
+
+	if (sigaction(SIGQUIT, &act, NULL) != 0)
+	{
+		LOG_ERROR(log, "Failed to register SIGQUIT handler!");
 		return false;
 	}
 

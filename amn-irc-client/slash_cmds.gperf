@@ -1,0 +1,38 @@
+%{
+
+#include "slash_cmd_map.h"
+
+struct SlashCmdTypeMapping
+{
+	const char* name;
+	SlashCmdType cmd;
+};
+
+const struct SlashCmdTypeMapping* in_word_set(const char* cmd, size_t len);
+
+SlashCmdType SlashCmdType_FromStr(const char* cmd, size_t len)
+{
+	const struct SlashCmdTypeMapping* mapping =  in_word_set(cmd, len);
+
+	return mapping != NULL ? mapping->cmd : SlashCmdType_Null;
+}
+
+
+%}
+%language=ANSI-C
+%compare-strncmp
+%readonly-tables
+%enum
+%includes
+%struct-type
+struct SlashCmdTypeMapping;
+%%
+connect, SlashCmdType_Connect
+quit, SlashCmdType_Quit
+ping, SlashCmdType_Ping
+nickname, SlashCmdType_Nick
+join, SlashCmdType_Join
+kick, SlashCmdType_Kick
+mute, SlashCmdType_Mute
+unmute, SlashCmdType_Unmute
+whois, SlashCmdType_Whois

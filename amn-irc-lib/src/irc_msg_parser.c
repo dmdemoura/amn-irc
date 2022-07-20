@@ -188,6 +188,14 @@ static bool IrcMsgParser_ParseCommand(IrcMsgParser* self)
 
 	self->rawMsg = cmdEnd;
 
+	if (cmdEnd == NULL)
+	{
+		LOG_WARN(self->log,
+				"Invalid message: expected <SPACE> after <command>.");
+
+		return false;
+	}
+
 	if (!IrcMsgValidator_ValidateCommand(self->validator, cmdStart, cmdEnd))
 	{
 		return false;
@@ -207,6 +215,14 @@ static bool IrcMsgParser_ParseMiddleParam(IrcMsgParser* self)
 	const char* paramEnd = StrUtils_FindFirst(paramStart, " \r");
 
 	self->rawMsg = paramEnd;
+
+	if (paramEnd == NULL)
+	{
+		LOG_WARN(self->log,
+				"Invalid message: expected <SPACE> or <CR> after <middle>.");
+
+		return false;
+	}
 
 	if (!IrcMsgValidator_ValidateMiddleParam(self->validator, paramStart, paramEnd))
 	{
@@ -232,6 +248,14 @@ static bool IrcMsgParser_ParseTrailingParam(IrcMsgParser* self)
 	const char* paramEnd = strchr(paramStart, '\r');
 
 	self->rawMsg = paramEnd;
+
+	if (paramEnd == NULL)
+	{
+		LOG_WARN(self->log,
+				"Invalid message: expected <CR> after <trailing>.");
+
+		return false;
+	}
 
 	if (!IrcMsgValidator_ValidateTrailingParam(self->validator, paramStart, paramEnd))
 	{

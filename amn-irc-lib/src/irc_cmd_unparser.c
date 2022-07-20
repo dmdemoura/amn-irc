@@ -46,8 +46,11 @@ IrcMsg* IrcCmdUnparser_Unparse(IrcCmdUnparser* self, const IrcCmd* cmd)
 		return NULL;
 	}
 
-	msg->cmd = cmd->type;
-	msg->paramCount = 0;
+	*msg = (IrcMsg) {
+		.cmd = cmd->type,
+		.paramCount = 0,
+	};
+
 	if (!IrcMsgPrefix_Clone(&cmd->prefix, &msg->prefix))
 	{
 		LOG_ERROR(self->log, "Failed to clone message prefix");
@@ -81,7 +84,13 @@ IrcMsg* IrcCmdUnparser_Unparse(IrcCmdUnparser* self, const IrcCmd* cmd)
 
 static bool UnparseNick(IrcCmdUnparser* self, IrcMsg* msg, const IrcCmd* cmd)
 {
-	msg->params[0] = cmd->nick.nickname;
+	msg->params[0] = StrUtils_Clone(cmd->nick.nickname);
+	if (msg->params[0] == NULL)
+	{
+		LOG_ERROR(self->log, "Failed to clone nickname");
+		return false;
+	}
+
 	msg->paramCount = 1;
 
 	if (cmd->nick.hopCount == 0)

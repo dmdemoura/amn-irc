@@ -14,6 +14,10 @@ bool IrcMsgPrefix_Clone(const IrcMsgPrefix* self, IrcMsgPrefix* clone)
 			return false;	
 		}
 	}
+	else
+	{
+		clone->hostname = NULL;
+	}
 	
 	if (self->origin != NULL)
 	{
@@ -23,6 +27,10 @@ bool IrcMsgPrefix_Clone(const IrcMsgPrefix* self, IrcMsgPrefix* clone)
 			return false;	
 		}
 	}
+	else
+	{
+		clone->origin = NULL;
+	}
 
 	if (self->username != NULL)
 	{
@@ -31,6 +39,10 @@ bool IrcMsgPrefix_Clone(const IrcMsgPrefix* self, IrcMsgPrefix* clone)
 		{
 			return false;	
 		}
+	}
+	else
+	{
+		clone->username = NULL;
 	}
 
 	return true;

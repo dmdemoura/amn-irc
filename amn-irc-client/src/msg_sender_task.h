@@ -5,6 +5,6 @@
 #include "task.h"
 #include "user_input_queue.h"
 
-Task* MsgSenderTask_New(const Logger* log, UserInputQueue* userInput, int socket); 
+Task* MsgSenderTask_New(const Logger* log, UserInputQueue* userInput); 
 
 #endif /// AMN_MSG_SENDER_TASK_H
